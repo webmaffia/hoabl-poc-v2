@@ -17,7 +17,15 @@ function flatten(packageData: ProjectKnowledgePackage): Array<{ section: string;
   return Object.entries(packageData.sections).flatMap(([section, items]) => items.map((text) => ({ section, text })));
 }
 
-function keywordFallback(project: ProjectKnowledgePackage, query: string, limit: number) {
+interface RetrievedMatch {
+  section: string;
+  text: string;
+  sourceName: string;
+  sourceType: string;
+  score: number;
+}
+
+function keywordFallback(project: ProjectKnowledgePackage, query: string, limit: number): RetrievedMatch[] {
   const queryTokens = tokens(query);
   return flatten(project)
     .map((item) => {
@@ -33,7 +41,7 @@ function keywordFallback(project: ProjectKnowledgePackage, query: string, limit:
 
 export async function retrieveProjectKnowledge(projectId: string | null | undefined, query: string, limit = 8) {
   const project = getProjectKnowledge(projectId);
-  if (!project) return { project: null, matches: [], source: "no-project-selected" as const };
+  if (!project) return { project: null, matches: [] as RetrievedMatch[], source: "no-project-selected" as const };
 
   // Vector RAG is an optional upgrade. The POC must work out of the box with
   // only OPENAI_API_KEY and the local project registry. Avoid calling Gemini

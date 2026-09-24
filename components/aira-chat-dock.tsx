@@ -67,8 +67,8 @@ export function AiraChatDock() {
         });
         historyRef.current = [
           ...historyRef.current,
-          { role: "user", content: question },
-          { role: "assistant", content: result.response },
+          { role: "user" as const, content: question },
+          { role: "assistant" as const, content: result.response },
         ].slice(-12);
         leadRef.current = result.lead;
         setMessages((prev) => [...prev, { id: `a-${Date.now()}`, from: "aira", text: result.response }]);

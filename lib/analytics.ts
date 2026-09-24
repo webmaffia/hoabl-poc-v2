@@ -15,6 +15,7 @@ export type AnalyticsEvent =
   | "ai_processing_completed"
   | "project_walkthrough_started"
   | "project_walkthrough_completed"
+  | "walkthrough_video_triggered"
   | "token_cta_clicked"
   | "kyc_started"
   | "kyc_completed"

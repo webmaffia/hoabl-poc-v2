@@ -1,6 +1,15 @@
 import { createHash } from "node:crypto";
 import { QDRANT_API_KEY, QDRANT_COLLECTION, QDRANT_URL } from "./config";
 
+export interface KnowledgeChunk {
+  projectId: string;
+  text: string;
+  section: string;
+  sourceName: string;
+  sourceType: "pdf" | "faq" | "registry";
+  chunkIndex: number;
+}
+
 function headers() {
   return {
     "Content-Type": "application/json",
@@ -19,6 +28,19 @@ async function qdrant(path: string, init?: RequestInit) {
     throw new Error(`Qdrant request failed (${response.status}): ${text}`);
   }
   return response.json();
+}
+
+export async function ensureCollection(dimensions: number) {
+  if (!QDRANT_URL) throw new Error("QDRANT_URL is not configured.");
+  const existing = await fetch(`${QDRANT_URL}/collections/${encodeURIComponent(QDRANT_COLLECTION)}`, {
+    headers: headers(),
+  });
+  if (existing.ok) return;
+
+  await qdrant(`/collections/${encodeURIComponent(QDRANT_COLLECTION)}`, {
+    method: "PUT",
+    body: JSON.stringify({ vectors: { size: dimensions, distance: "Cosine" } }),
+  });
 }
 
 function stableUuid(input: string) {
@@ -49,7 +71,11 @@ export async function upsertChunks(chunks: KnowledgeChunk[], vectors: number[][]
   }
 }
 
-export async function searchChunks(projectId: string, vector: number[], limit = 8) {
+export async function searchChunks(
+  projectId: string,
+  vector: number[],
+  limit = 8
+): Promise<{ score: number; section: string; text: string; sourceName: string; sourceType: string }[]> {
   const data = await qdrant(`/collections/${encodeURIComponent(QDRANT_COLLECTION)}/points/query`, {
     method: "POST",
     body: JSON.stringify({

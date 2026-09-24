@@ -186,6 +186,22 @@ export function Screen02BuyerProfile() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Speaks the current question whenever stepIdx changes (skipping the very
+  // first mount, already spoken above with the intro line). Deriving the
+  // spoken text from the same state that drives the on-screen bubble/options
+  // — rather than submitAnswer computing a "next step" by hand and calling
+  // speak() itself — guarantees audio and screen can never fall out of sync:
+  // if submitAnswer ever ran twice in close succession (e.g. a duplicate
+  // voice event), a hand-picked "next step" could end up one question ahead
+  // of what setStepIdx actually settled on, leaving Aira audibly asking a
+  // question the screen hadn't advanced to yet.
+  useEffect(() => {
+    if (!initialized.current) return;
+    if (stepIdx === 0) return;
+    speak(step.question);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stepIdx]);
+
   const toggleOption = (value: string) => {
     // A manual tap means the user has switched to answering by hand for
     // this question — stop the mic from auto-reopening after Aira's next
@@ -236,14 +252,12 @@ export function Screen02BuyerProfile() {
       return;
     }
 
-    // Update the visible question and answer options immediately. The old
-    // delayed update could be missed while speech recognition / avatar UI
-    // changed state, leaving Q1 visible even though the answer was saved.
-    const nextStep = STEPS[stepIdx + 1];
+    // Update the visible question and answer options immediately — the
+    // useEffect above (keyed on stepIdx) is what speaks the new question, so
+    // audio and screen always derive from this one state update together.
     setStepIdx(stepIdx + 1);
     setTyping(false);
     advancingRef.current = false;
-    speak(nextStep.question);
   };
 
   const handleContinue = () => {

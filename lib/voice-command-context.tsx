@@ -137,6 +137,16 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
   const conversationActiveRef = useRef(false);
   const wasSpeakingRef = useRef(false);
   const resultReceivedRef = useRef(false);
+  // Mirrors callActive state for handleTranscript below, which is a stable
+  // useCallback with no deps (see its own comment) — a ref is how it reads
+  // the current value without being recreated every time callActive flips.
+  const callActiveRef = useRef(false);
+  callActiveRef.current = callActive;
+  // See handleTranscript: once a match fires, ignore any further transcript
+  // for a short window — closes out trailing partial-result stragglers from
+  // the same utterance that would otherwise be checked against whatever
+  // command set is registered by the time they arrive.
+  const suppressUntilRef = useRef(0);
 
   const registerCommands = useCallback((commands: VoiceCommand[]) => {
     commandsRef.current = commands;
@@ -149,10 +159,24 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
   }, []);
 
   const handleTranscript = useCallback((text: string) => {
+    // Chrome's SpeechRecognition can deliver several onresult callbacks for
+    // a single utterance as it refines its guess ("In" -> "Invest" ->
+    // "Investment") even with interimResults=false, each looking like a
+    // separate final transcript. Once one of those has already matched and
+    // moved the conversation on (e.g. answered a profile question and
+    // advanced to the next one), a later straggler from the *same*
+    // utterance must not be evaluated against whatever command set is
+    // registered by then — it would land on the next question's commands,
+    // fail to match, and wrongly trigger a reprompt right after a perfectly
+    // good answer. suppressUntilRef closes that window.
+    if (Date.now() < suppressUntilRef.current) return;
+
     setHeard(text);
 
     const testMatch = commandsRef.current.find((cmd) => cmd.test?.(text));
     if (testMatch) {
+      suppressUntilRef.current = Date.now() + 1500;
+      recognitionRef.current?.abort();
       testMatch.action(text);
       return;
     }
@@ -169,7 +193,20 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
       }
     }
     if (best) {
+      suppressUntilRef.current = Date.now() + 1500;
+      recognitionRef.current?.abort();
       best.action(text);
+      return;
+    }
+
+    // During the buyer-profile "call" (Screen02's 3 profiling questions),
+    // Aira should only ever ask her question and accept an answer to it —
+    // never hand off to the general Sales Agent mid-profile. If nothing
+    // matched, re-prompt for a proper answer instead of routing to the
+    // sales agent; the agent only takes over once the profile is built and
+    // callActive goes false.
+    if (callActiveRef.current) {
+      speakRef.current("Sorry, I didn't quite get that — could you say that again, or tap one of the options?");
       return;
     }
 
@@ -189,8 +226,8 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
         });
         salesHistoryRef.current = [
           ...salesHistoryRef.current,
-          { role: "user", content: text },
-          { role: "assistant", content: result.response },
+          { role: "user" as const, content: text },
+          { role: "assistant" as const, content: result.response },
         ].slice(-12);
         leadRef.current = result.lead;
         if (typeof window !== "undefined") {
@@ -232,6 +269,11 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
       if (!resultReceivedRef.current) setMicError("Didn't catch that — try again.");
     };
     recognition.onerror = (e: any) => {
+      // "aborted" is what fires when handleTranscript itself calls
+      // recognition.abort() right after a successful match, to cut off any
+      // trailing partial-result stragglers from the same utterance — that's
+      // expected and not a real failure, so it shouldn't surface an error.
+      if (e.error === "aborted") return;
       // eslint-disable-next-line no-console
       console.error("[Voice] SpeechRecognition error:", e.error);
       const messages: Record<string, string> = {
