@@ -21,7 +21,7 @@ const OTP_LENGTH = 6;
 const DEMO_OTP = "123456";
 
 export function Screen15IdentityCapture() {
-  const { next, selectedProject } = useJourney();
+  const { next, dispatch, selectedProject } = useJourney();
   const { speak } = useAira();
   const [step, setStep] = useState<"idle" | "sending">("idle");
   const [showVerifiedToast, setShowVerifiedToast] = useState(false);
@@ -84,8 +84,10 @@ export function Screen15IdentityCapture() {
     if (!otpComplete || step === "sending") return;
     track("identity_captured", { hasName: !!name.trim() });
     setStep("sending");
+    const firstName = name.trim().split(/\s+/)[0];
     setTimeout(() => {
-      speak(`Verified — let's take a look at ${selectedProject.name}.`);
+      if (firstName) dispatch({ type: "SET_BUYER_NAME", name: firstName });
+      speak(`Verified — let's take a look at ${selectedProject.name}, ${firstName}.`);
       setShowVerifiedToast(true);
       setTimeout(next, 1600);
     }, 1200);

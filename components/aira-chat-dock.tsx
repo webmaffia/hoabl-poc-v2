@@ -38,7 +38,7 @@ export interface ChatMsg {
 export function AiraChatDock() {
   const { mode, setMode, setAvatarExpanded, supported } = useVoice();
   const { status, speak } = useAira();
-  const { selectedProject } = useJourney();
+  const { selectedProject, buyerName } = useJourney();
   const historyRef = useRef<SalesMessage[]>([]);
   const leadRef = useRef<LeadState>({ ...DEFAULT_LEAD });
   const [draft, setDraft] = useState("");
@@ -59,6 +59,12 @@ export function AiraChatDock() {
 
     void (async () => {
       try {
+        // Prefer the name captured on the identity-capture screen (a
+        // reliable, structured source) over waiting for the LLM to infer
+        // one from conversation, without clobbering a name it already has.
+        if (buyerName && !leadRef.current.customerName) {
+          leadRef.current = { ...leadRef.current, customerName: buyerName };
+        }
         const result = await askSalesAgent({
           message: question,
           projectId: selectedProject?.id,

@@ -124,9 +124,15 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
   // read the current speak() and journey context without needing to be
   // recreated whenever the buyer's profile, project or pocket changes.
   const { speak, isSpeaking } = useAira();
-  const { selectedProject } = useJourney();
+  const { selectedProject, buyerName } = useJourney();
   const speakRef = useRef(speak);
   speakRef.current = speak;
+  // "Latest ref" for the same reason as speakRef — handleTranscript is a
+  // stable useCallback with no deps, so it can't close over buyerName
+  // directly and still see it update once the identity-capture screen sets
+  // it mid-conversation.
+  const buyerNameRef = useRef(buyerName);
+  buyerNameRef.current = buyerName;
   // Tracks whether the user has engaged voice at least once during the
   // current "call" (see callActive) — e.g. Screen02BuyerProfile's 3
   // profiling questions. Once true, the mic is reopened automatically after
@@ -217,6 +223,13 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
     // old pre-fed responses.
     void (async () => {
       try {
+        // The identity-capture screen captures the buyer's name directly
+        // (a reliable, structured source) — prefer it over waiting for the
+        // LLM to infer a name from conversation, but don't clobber a name
+        // the LLM already picked up before that screen ran.
+        if (buyerNameRef.current && !leadRef.current.customerName) {
+          leadRef.current = { ...leadRef.current, customerName: buyerNameRef.current };
+        }
         const result = await askSalesAgent({
           message: text,
           context: typeof document !== "undefined" ? document.body.dataset.walkthroughContext || null : null,
