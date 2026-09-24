@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useMemo, useReducer } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useReducer, useState } from "react";
 import {
   AdvisorContext,
   BuyerProfile,
@@ -86,8 +86,44 @@ const initialState: JourneyState = {
   tokenPaymentStatus: "not_started",
 };
 
+// Resuming a left-off session: which screen the buyer was on and everything
+// they'd already told Aira (profile, pockets viewed, KYC/payment progress,
+// etc.) is persisted here, so reopening the app continues the same
+// conversation instead of restarting from the welcome screen.
+const STORAGE_KEY = "hoabl-journey-state";
+
+function loadPersistedState(): JourneyState | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    // Spread over the current defaults rather than trusting the stored
+    // shape outright — a previous session's data may predate a field this
+    // build added, and a missing field should fall back to its default
+    // instead of leaving it `undefined`.
+    return {
+      ...initialState,
+      ...parsed,
+      buyerProfile: { ...initialBuyerProfile, ...parsed?.buyerProfile },
+    };
+  } catch {
+    return null;
+  }
+}
+
+function persistState(state: JourneyState) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    /* storage unavailable (private browsing, quota) — resume just won't persist */
+  }
+}
+
 type Action =
   | { type: "GO_TO"; screen: ScreenId }
+  | { type: "HYDRATE"; state: JourneyState }
   | { type: "SELECT_PROJECT"; id: string }
   | { type: "NEXT" }
   | { type: "BACK" }
@@ -106,6 +142,8 @@ type Action =
 
 function reducer(state: JourneyState, action: Action): JourneyState {
   switch (action.type) {
+    case "HYDRATE":
+      return action.state;
     case "GO_TO": {
       const idx = SCREEN_ORDER.indexOf(action.screen);
       return { ...state, screenIndex: idx === -1 ? state.screenIndex : idx };
@@ -184,6 +222,26 @@ const JourneyContext = createContext<JourneyContextValue | null>(null);
 export function JourneyProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const currentScreen = SCREEN_ORDER[state.screenIndex];
+  // Starts every render (including the server-rendered first paint) on
+  // initialState, then swaps in whatever was saved from a previous visit
+  // right after mount — reading localStorage during the initial render
+  // itself would make the server and client's first paint disagree and
+  // trip a hydration error.
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    const stored = loadPersistedState();
+    if (stored) dispatch({ type: "HYDRATE", state: stored });
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    // Wait for the hydration check above so this can't win a race against
+    // it and overwrite a just-restored session with the fresh initialState
+    // it started from before HYDRATE landed.
+    if (!hydrated) return;
+    persistState(state);
+  }, [state, hydrated]);
 
   const value = useMemo<JourneyContextValue>(() => {
     const selectedProject = getProjectById(state.selectedProjectId);
