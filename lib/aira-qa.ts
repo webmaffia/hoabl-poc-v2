@@ -46,7 +46,7 @@ function describeCurrentScreen(ctx: QaContext): string {
     "payment-plan": pocket
       ? `This is the payment plan for ${pocket.name} — choose a plan type and adjust the booking percentage to see the full schedule.`
       : "This is the payment plan screen — choose a plan type and see the full instalment schedule.",
-    "identity-capture": "This is where I send your plan to you — just your name and mobile, verified with a quick code, so you can pick up where you left off later.",
+    "identity-capture": "Just verifying it's you — your name and mobile, confirmed with a quick code — before we walk through the project in detail.",
     "token-kyc": pocket
       ? `This is the refundable ₹45,000 token and KYC step for ${pocket.name} — completing it locks the pocket in before your advisor handoff.`
       : "This is the refundable token and KYC step — completing it locks in your chosen pocket before your advisor handoff.",

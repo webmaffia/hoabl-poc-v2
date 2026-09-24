@@ -1,32 +1,30 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { FileText, ShieldCheck, CheckCircle2, Smartphone } from "lucide-react";
+import { MapPin, ShieldCheck, CheckCircle2, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScreenShell } from "@/components/screen-shell";
 import { useJourney } from "@/lib/journey-context";
 import { useAira } from "@/lib/aira-context";
 import { useVoiceCommands } from "@/lib/voice-command-context";
-import { getPocketById } from "@/lib/data";
-import { rankPockets } from "@/lib/recommendation";
 import { track } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
-// A lightweight "send me my plan" moment — just name + mobile, not the full
-// KYC form — that packages everything the buyer has already told Aira into
-// a document and (in this demo) simulates delivering it over WhatsApp.
-// One screen throughout: the code-box input appears inline once a code is
-// sent, rather than navigating to a separate step.
+// A quick mobile-number verification gate — just name + mobile, not the full
+// KYC form — right after the buyer commits to a project, before the
+// walkthrough onward ties everything to a verified number instead of an
+// anonymous visitor. One screen throughout: the code-box input appears
+// inline once a code is sent, rather than navigating to a separate step.
 
 const OTP_LENGTH = 6;
 const DEMO_OTP = "123456";
 
 export function Screen15IdentityCapture() {
-  const { next, buyerProfile, pocketPreferences, activePocketId, selectedProject, projectPockets } = useJourney();
+  const { next, selectedProject } = useJourney();
   const { speak } = useAira();
   const [step, setStep] = useState<"idle" | "sending">("idle");
-  const [showSentToast, setShowSentToast] = useState(false);
+  const [showVerifiedToast, setShowVerifiedToast] = useState(false);
   // Pre-filled with valid dummy data so the demo flow doesn't require typing.
   const [name, setName] = useState("Rohan Kulkarni");
   const [mobile, setMobile] = useState("9820441234");
@@ -34,14 +32,8 @@ export function Screen15IdentityCapture() {
   const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(""));
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  const ranked = useMemo(
-    () => rankPockets(projectPockets, buyerProfile, pocketPreferences),
-    [projectPockets, buyerProfile, pocketPreferences]
-  );
-  const pocket = getPocketById(activePocketId || "") || ranked[0]?.pocket || projectPockets[0];
-
   useEffect(() => {
-    speak("So I can send this to you and we can pick up right where we left off — what's your name and mobile number?");
+    speak(`Before we dive into ${selectedProject.name} — what's your name and mobile number, so I can verify it's you?`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -93,9 +85,8 @@ export function Screen15IdentityCapture() {
     track("identity_captured", { hasName: !!name.trim() });
     setStep("sending");
     setTimeout(() => {
-      track("plan_sent_whatsapp");
-      speak("Sent — your plan is on its way to you on WhatsApp, in the same conversation as before.");
-      setShowSentToast(true);
+      speak(`Verified — let's take a look at ${selectedProject.name}.`);
+      setShowVerifiedToast(true);
       setTimeout(next, 1600);
     }, 1200);
   };
@@ -107,11 +98,11 @@ export function Screen15IdentityCapture() {
 
   useVoiceCommands([
     { labels: ["send otp", "send code"], action: sendCode },
-    { labels: ["verify", "send my plan", "continue", "next"], action: submit },
+    { labels: ["verify", "continue", "next"], action: submit },
   ]);
 
   return (
-    <ScreenShell showStages title="Send my plan">
+    <ScreenShell showStages title="Verify your number">
       <div className="flex h-full flex-col overflow-y-auto no-scrollbar px-7 pb-5 pt-8">
         <motion.div
           initial={{ opacity: 0, y: 8 }}
@@ -123,7 +114,7 @@ export function Screen15IdentityCapture() {
           </span>
 
           <h1 className="mt-4 text-balance font-serif text-2xl leading-tight text-forest-900">
-            Let&rsquo;s get your plan to you
+            Let&rsquo;s verify it&rsquo;s you
           </h1>
           <p className="mt-1.5 text-sm text-forest-900/50">
             Add your details and we&rsquo;ll text you a quick code to confirm it&rsquo;s you.
@@ -131,15 +122,11 @@ export function Screen15IdentityCapture() {
 
           <div className="mt-5 flex w-full items-center gap-3 rounded-xl2 border border-forest-900/8 bg-white p-3.5 text-left shadow-card">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-forest-800/8 text-forest-800">
-              <FileText className="h-5 w-5" />
+              <MapPin className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-forest-900">
-                Your plan — {selectedProject.name}, {pocket.name}
-              </p>
-              <p className="text-xs leading-snug text-forest-900/50">
-                Matched pockets, pricing, payment schedule, trust documents.
-              </p>
+              <p className="truncate text-sm font-semibold text-forest-900">{selectedProject.name}</p>
+              <p className="text-xs leading-snug text-forest-900/50">{selectedProject.location}</p>
             </div>
           </div>
 
@@ -236,13 +223,13 @@ export function Screen15IdentityCapture() {
             disabled={!otpSent || !otpComplete || step === "sending"}
             onClick={submit}
           >
-            {step === "sending" ? "Verifying…" : "Verify & send my plan →"}
+            {step === "sending" ? "Verifying…" : "Verify & continue →"}
           </Button>
         </motion.div>
       </div>
 
       <AnimatePresence>
-        {showSentToast && (
+        {showVerifiedToast && (
           <motion.div
             initial={{ opacity: 0, y: 12, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -254,8 +241,8 @@ export function Screen15IdentityCapture() {
               <CheckCircle2 className="h-4 w-4" />
             </span>
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-ivory-50">Plan sent successfully</p>
-              <p className="truncate text-xs text-ivory-100/60">Delivered on WhatsApp to +91 {mobile}</p>
+              <p className="text-sm font-semibold text-ivory-50">Number verified</p>
+              <p className="truncate text-xs text-ivory-100/60">+91 {mobile}</p>
             </div>
           </motion.div>
         )}

@@ -34,7 +34,6 @@ export type AnalyticsEvent =
   | "advisor_handoff_clicked"
   | "identity_otp_sent"
   | "identity_captured"
-  | "plan_sent_whatsapp"
   | "remaining_payment_completed"
   | "demo_reset"
   | "brochure_cta_clicked"

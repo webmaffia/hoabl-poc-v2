@@ -24,15 +24,16 @@ export const SCREEN_ORDER = [
   // projects, with the one matched to the buyer's profile highlighted.
   "select-project",
   "project-match",
+  // Verify the buyer's mobile (OTP) right after they commit to a project,
+  // before showing project details — so the walkthrough onward is tied to a
+  // verified number instead of an anonymous visitor.
+  "identity-capture",
   "project-walkthrough",
   "pocket-map",
   "pocket-detail",
   "payment-plan",
-  // A lightweight "send me my plan" moment — name + mobile, no full KYC —
-  // before the heavier token payment + KYC step.
-  "identity-capture",
-  // Token payment + KYC now happen once the buyer has actually decided,
-  // right before handing off to a human advisor — rather than gating pocket
+  // Token payment + KYC happen once the buyer has actually decided, right
+  // before handing off to a human advisor — rather than gating pocket
   // browsing behind payment up front.
   "token-kyc",
   "access-unlocked",
