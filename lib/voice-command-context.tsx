@@ -97,7 +97,16 @@ function matchScore(heard: string, label: string): number {
   const l = normalize(label);
   if (!h || !l) return 0;
   if (h === l) return 1000;
-  if (h.includes(l) || l.includes(h)) return 100 + l.length;
+  // h.includes(l) (the full label appears inside a longer spoken sentence)
+  // is safe at any length. l.includes(h) is the risky direction: Chrome's
+  // SpeechRecognition can deliver several onresult callbacks for one
+  // utterance as it refines its guess ("In" -> "Invest" -> "Investment"),
+  // and a short early fragment like "In" is a substring of almost any
+  // label ("Investment", "Interested", ...) — treating that as a real
+  // match aborts recognition (see handleTranscript) before the complete,
+  // actually-resolvable word ever arrives. Require a non-trivial fragment
+  // length here, matching the threshold wordsMatch already uses below.
+  if (h.includes(l) || (h.length >= 4 && l.includes(h))) return 100 + l.length;
   const hWords = Array.from(new Set(h.split(/\s+/)));
   const lWords = l.split(/\s+/);
   const overlap = lWords.filter((w) => hWords.some((hw) => wordsMatch(hw, w))).length;
