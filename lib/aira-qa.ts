@@ -36,7 +36,6 @@ function describeCurrentScreen(ctx: QaContext): string {
     welcome: "This is the welcome screen — a quick intro to how I'll guide you to the right piece of land.",
     "buyer-profile": "I'm asking you three quick questions here — what you're buying for, your budget, and what you expect from the land — so I can match you to the right project.",
     "ai-processing": "I'm matching your answers against available projects right now — just a moment.",
-    "select-project": "This is the full list of HoABL projects — the one that fits your profile best is highlighted, but you can browse and pick any of them.",
     "project-match": `You're looking at ${project} — I've flagged it as your match, or you can switch to a different project from the list below it.`,
     "project-walkthrough": `This walks you through ${project} tab by tab — location, connectivity, development, amenities, layout, and what's still to confirm with HoABL.`,
     "pocket-map": "This is the pocket map — tap any tile to see pricing and details for that pocket, or switch to \"My matches\" for the ones that best fit your profile.",

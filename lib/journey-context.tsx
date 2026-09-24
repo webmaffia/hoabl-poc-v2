@@ -20,9 +20,9 @@ export const SCREEN_ORDER = [
   // the project list — visually communicates the matching engine actually
   // running, rather than jumping straight to a static list.
   "ai-processing",
-  // Right after the profile is built — a real, browsable list of HoABL
-  // projects, with the one matched to the buyer's profile highlighted.
-  "select-project",
+  // The AI-matched project, with a switcher to any other HoABL project —
+  // this absorbed the separate "browse all projects" list screen, which
+  // duplicated the same picker for no real benefit.
   "project-match",
   // Verify the buyer's mobile (OTP) right after they commit to a project,
   // before showing project details — so the walkthrough onward is tied to a
@@ -45,6 +45,9 @@ export type ScreenId = (typeof SCREEN_ORDER)[number];
 interface JourneyState {
   screenIndex: number;
   selectedProjectId: string;
+  /** First name captured on the identity-capture (mobile OTP) screen — once
+   * set, Aira addresses the buyer by name instead of the generic "ji". */
+  buyerName: string | null;
   buyerProfile: BuyerProfile;
   pocketPreferences: PocketPreferenceTag[];
   pocketsViewed: string[];
@@ -74,6 +77,7 @@ const initialBuyerProfile: BuyerProfile = {
 const initialState: JourneyState = {
   screenIndex: 0,
   selectedProjectId: PROJECT.id,
+  buyerName: null,
   buyerProfile: initialBuyerProfile,
   pocketPreferences: [],
   pocketsViewed: [],
@@ -129,6 +133,7 @@ type Action =
   | { type: "NEXT" }
   | { type: "BACK" }
   | { type: "UPDATE_PROFILE"; patch: Partial<BuyerProfile> }
+  | { type: "SET_BUYER_NAME"; name: string }
   | { type: "SET_POCKET_PREFERENCES"; prefs: PocketPreferenceTag[] }
   | { type: "VIEW_POCKET"; id: string }
   | { type: "TOGGLE_SHORTLIST"; id: string }
@@ -159,6 +164,8 @@ function reducer(state: JourneyState, action: Action): JourneyState {
       return { ...state, screenIndex: Math.max(state.screenIndex - 1, 0) };
     case "UPDATE_PROFILE":
       return { ...state, buyerProfile: { ...state.buyerProfile, ...action.patch } };
+    case "SET_BUYER_NAME":
+      return { ...state, buyerName: action.name };
     case "SET_POCKET_PREFERENCES":
       return { ...state, pocketPreferences: action.prefs };
     case "VIEW_POCKET":

@@ -21,7 +21,6 @@ import { Screen10PocketMap } from "@/components/screens/screen-10-pocket-map";
 import { Screen11PocketDetail } from "@/components/screens/screen-11-pocket-detail";
 import { Screen14AdvisorHandoff } from "@/components/screens/screen-14-advisor-handoff";
 import { Screen15IdentityCapture } from "@/components/screens/screen-15-identity-capture";
-import { Screen16SelectProject } from "@/components/screens/screen-16-select-project";
 import { Screen17PaymentPlan } from "@/components/screens/screen-17-payment-plan";
 import { Screen18AiProcessing } from "@/components/screens/screen-18-ai-processing";
 
@@ -37,7 +36,6 @@ const SCREEN_COMPONENTS = {
   "payment-plan": Screen17PaymentPlan,
   "advisor-handoff": Screen14AdvisorHandoff,
   "identity-capture": Screen15IdentityCapture,
-  "select-project": Screen16SelectProject,
   "ai-processing": Screen18AiProcessing,
 } as const;
 
