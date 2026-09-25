@@ -10,6 +10,7 @@ import { AiraChatDock } from "@/components/aira-chat-dock";
 import { AiraExpandedPanel } from "@/components/aira-expanded-panel";
 import { AiraCtaBar } from "@/components/aira-cta-bar";
 import { DemoControls } from "@/components/demo-controls";
+import { WelcomeBackGate } from "@/components/welcome-back-gate";
 import { cn } from "@/lib/utils";
 import { Screen01Welcome } from "@/components/screens/screen-01-welcome";
 import { Screen02BuyerProfile } from "@/components/screens/screen-02-buyer-profile";
@@ -40,8 +41,23 @@ const SCREEN_COMPONENTS = {
 } as const;
 
 function JourneyScreen() {
-  const { currentScreen } = useJourney();
+  const { currentScreen, showWelcomeBack } = useJourney();
   const { mode, avatarExpanded, callActive } = useVoice();
+
+  // A returning mid-journey session shows this gate instead of the restored
+  // screen straight away — otherwise resuming exactly where a buyer dropped
+  // off is invisible to them (and to a client reviewing the demo), even
+  // though the state machine is already doing it under the hood.
+  if (showWelcomeBack) {
+    return (
+      <div className="relative flex h-full w-full flex-col">
+        <div className="relative h-full w-full overflow-hidden">
+          <WelcomeBackGate />
+          <DemoControls />
+        </div>
+      </div>
+    );
+  }
   const Screen = SCREEN_COMPONENTS[currentScreen];
   // Screen 1 already has Aira as a full-width hero (see Screen01Welcome) —
   // the floating draggable widget and mic/chat bar would be redundant

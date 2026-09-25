@@ -223,6 +223,12 @@ interface JourneyContextValue extends JourneyState {
   /** That project's pockets (Aero Estate's own set, or a generated illustrative layout for others). */
   projectPockets: ReturnType<typeof getProjectPockets>;
   advisorContext: AdvisorContext;
+  /** True for one page load when a returning buyer's session was restored mid-journey — see <WelcomeBackGate />. */
+  showWelcomeBack: boolean;
+  /** Dismiss the gate and continue on the restored screen. */
+  continueJourney: () => void;
+  /** Dismiss the gate and reset the journey instead of resuming it. */
+  restartJourney: () => void;
 }
 
 const JourneyContext = createContext<JourneyContextValue | null>(null);
@@ -236,10 +242,23 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   // itself would make the server and client's first paint disagree and
   // trip a hydration error.
   const [hydrated, setHydrated] = useState(false);
+  // Kept outside the persisted reducer state on purpose: it's a one-time
+  // "you're resuming" gate for this page load, not part of the buyer's
+  // journey data, and must never itself be written back to localStorage
+  // (that would re-show it, or hide it, based on a stale prior dismissal).
+  const [showWelcomeBack, setShowWelcomeBack] = useState(false);
 
   useEffect(() => {
     const stored = loadPersistedState();
-    if (stored) dispatch({ type: "HYDRATE", state: stored });
+    if (stored) {
+      dispatch({ type: "HYDRATE", state: stored });
+      // Only worth surfacing mid-journey — a fresh visitor (still on the
+      // welcome screen) or one who already reached the terminal advisor
+      // screen has nothing meaningful to "pick back up".
+      if (stored.screenIndex > 0 && stored.screenIndex < SCREEN_ORDER.length - 1) {
+        setShowWelcomeBack(true);
+      }
+    }
     setHydrated(true);
   }, []);
 
@@ -278,9 +297,15 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       selectedProject,
       projectPockets,
       advisorContext,
+      showWelcomeBack,
+      continueJourney: () => setShowWelcomeBack(false),
+      restartJourney: () => {
+        setShowWelcomeBack(false);
+        dispatch({ type: "RESET" });
+      },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, currentScreen]);
+  }, [state, currentScreen, showWelcomeBack]);
 
   return <JourneyContext.Provider value={value}>{children}</JourneyContext.Provider>;
 }
