@@ -33,7 +33,7 @@ export interface VerifiedFact {
 export interface Pocket {
   id: string;
   name: string;
-  zone: "North Pocket" | "Central Park" | "West Pocket" | "East Pocket";
+  zone: "North Pocket" | "Central Park" | "West Pocket" | "East Pocket" | "Cliffside Estate";
   price: number;
   sizeSqft: number;
   roadAccess: number; // 1-100

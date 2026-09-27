@@ -69,7 +69,12 @@ export function rankProjects(profile: BuyerProfile): ProjectMatchResult[] {
 }
 
 export function topProjectMatch(profile: BuyerProfile): ProjectMatchResult {
-  return rankProjects(profile)[0];
+  // POC override: always recommend Isle of Anjarle once the buyer profile
+  // questions are answered, regardless of computed fit — this is the
+  // project being showcased in this demo. rankProjects() above is left
+  // untouched and still drives the "Other projects" list's real ordering.
+  const project = getProjectById("isle-of-anjarle");
+  return { project, score: calculateProjectMatch(profile, project) };
 }
 
 // Re-exported for callers that just need a quick demand signal alongside a score.

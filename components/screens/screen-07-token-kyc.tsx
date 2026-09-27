@@ -8,10 +8,10 @@ import { ScreenShell } from "@/components/screen-shell";
 import { useJourney } from "@/lib/journey-context";
 import { useAira } from "@/lib/aira-context";
 import { useVoiceCommands } from "@/lib/voice-command-context";
-import { getPocketById } from "@/lib/data";
+import { getPocketById, getProjectTokenAmount } from "@/lib/data";
 import { rankPockets } from "@/lib/recommendation";
 import { track } from "@/lib/analytics";
-import { cn } from "@/lib/utils";
+import { cn, formatINR } from "@/lib/utils";
 
 const RESERVATION_SECONDS = 15 * 60;
 
@@ -34,13 +34,15 @@ function ReservationTimer() {
   );
 }
 
-const BENEFITS = [
-  "₹45,000 fully refundable as per applicable HoABL terms",
-  "Locks in your chosen pocket at today's terms",
-  "Complete KYC",
-  "Hands you off to a HoABL advisor with full context",
-  "Continue toward purchase after verification",
-];
+function benefitsFor(tokenAmount: number): string[] {
+  return [
+    `${formatINR(tokenAmount)} fully refundable as per applicable HoABL terms`,
+    "Locks in your chosen pocket at today's terms",
+    "Complete KYC",
+    "Hands you off to a HoABL advisor with full context",
+    "Continue toward purchase after verification",
+  ];
+}
 
 const KYC_CHECKLIST = ["PAN card", "Aadhaar card", "Address proof", "Selfie verification"];
 
@@ -68,6 +70,8 @@ export function Screen07TokenKyc() {
     [projectPockets, buyerProfile, pocketPreferences]
   );
   const pocket = getPocketById(activePocketId || "") || ranked[0]?.pocket || projectPockets[0];
+  const tokenAmount = getProjectTokenAmount(selectedProject.id);
+  const benefits = useMemo(() => benefitsFor(tokenAmount), [tokenAmount]);
 
   useEffect(() => {
     speak(
@@ -117,7 +121,7 @@ export function Screen07TokenKyc() {
     if (!kycValid) return;
     track("kyc_completed");
     setStep("payment");
-    speak(`KYC verified. All that's left is the ₹45,000 refundable token to lock in ${pocket.name} — pick whichever's fastest for you: UPI, net banking, or card.`);
+    speak(`KYC verified. All that's left is the ${formatINR(tokenAmount)} refundable token to lock in ${pocket.name} — pick whichever's fastest for you: UPI, net banking, or card.`);
   };
 
   const pay = () => {
@@ -136,7 +140,7 @@ export function Screen07TokenKyc() {
           { labels: ["upi"], action: () => setMethod("upi") },
           { labels: ["net banking", "netbanking", "bank"], action: () => setMethod("netbanking") },
           { labels: ["card", "credit card", "debit card"], action: () => setMethod("card") },
-          { labels: ["pay", "pay now", "pay 45000"], action: pay },
+          { labels: ["pay", "pay now"], action: pay },
         ]
   );
 
@@ -151,17 +155,17 @@ export function Screen07TokenKyc() {
               </h1>
 
               <div className="mt-4 rounded-xl2 border border-forest-900/8 bg-white p-5 text-center shadow-card">
-                <p className="font-serif text-4xl text-forest-900">₹45,000</p>
+                <p className="font-serif text-4xl text-forest-900">{formatINR(tokenAmount)}</p>
                 <p className="mt-1 text-sm font-medium text-gold-600">Fully Refundable Token</p>
                 <p className="mt-3 text-sm text-forest-900/60">
-                  Pay ₹45,000 and complete KYC to lock in your pocket before you meet your advisor.
+                  Pay {formatINR(tokenAmount)} and complete KYC to lock in your pocket before you meet your advisor.
                 </p>
                 <ReservationTimer />
               </div>
 
               <div className="mt-4 flex-1 overflow-y-auto no-scrollbar">
                 <ul className="space-y-2">
-                  {BENEFITS.map((b) => (
+                  {benefits.map((b) => (
                     <li key={b} className="flex items-start gap-2.5 text-sm text-forest-900/80">
                       <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-forest-800" />
                       {b}
@@ -199,7 +203,7 @@ export function Screen07TokenKyc() {
               </div>
 
               <Button size="lg" className="mt-4 w-full" onClick={startFlow}>
-                Pay ₹45,000 &amp; Complete KYC &rarr;
+                Pay {formatINR(tokenAmount)} &amp; Complete KYC &rarr;
               </Button>
               <p className="mt-2 text-center text-[11px] text-forest-900/40">
                 Prototype/demo — no real payment will be processed.
@@ -256,7 +260,7 @@ export function Screen07TokenKyc() {
           {step === "payment" && (
             <motion.div key="payment" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} className="flex h-full flex-col">
               <h1 className="font-serif text-xl text-forest-900">Pay the refundable token</h1>
-              <p className="mt-1 text-sm text-forest-900/55">₹45,000 &middot; fully refundable</p>
+              <p className="mt-1 text-sm text-forest-900/55">{formatINR(tokenAmount)} &middot; fully refundable</p>
 
               <div className="mt-5 space-y-2.5">
                 <PayOption icon={Smartphone} label="UPI (Recommended)" active={method === "upi"} onClick={() => setMethod("upi")} />
@@ -268,7 +272,7 @@ export function Screen07TokenKyc() {
                 <ShieldCheck className="h-3.5 w-3.5" /> 100% secure &middot; Refundable &middot; Trusted &middot; Demo transaction
               </div>
               <Button size="lg" className="w-full" onClick={pay}>
-                Pay ₹45,000 &rarr;
+                Pay {formatINR(tokenAmount)} &rarr;
               </Button>
             </motion.div>
           )}

@@ -77,6 +77,14 @@ export const PROJECTS: ProjectListing[] = [
     description: "Weekend residential plots at the foothills of Matheran",
     image: "https://hoabl-bucket.s3.ap-south-1.amazonaws.com/Flight_2_png_4740a0ed9b.webp",
   },
+  {
+    id: "isle-of-anjarle",
+    name: "Isle of Anjarle — The Grand Sea Land Finale",
+    location: "Anjarle, Konkan coast, Maharashtra",
+    description: "The world's rarest Sea × Hill address — a 100+ acre coastal estate designed by Sanjay Puri",
+    // Real client-supplied render (Final Renders/Aerial View.jpg), resized/compressed for web use — not a placeholder or guessed URL.
+    image: "/isle-of-anjarle-hero.webp",
+  },
 ];
 
 export const POCKETS: Pocket[] = [
@@ -311,6 +319,87 @@ export const POCKETS: Pocket[] = [
   },
 ];
 
+// Isle of Anjarle's two remaining configurations, real per the 16.09.2026
+// Closing Deck (see lib/sales-agent/projects/registry.ts for full sourcing).
+// Unlike the illustrative-pricing projects below, this project's price and
+// size are real — only the road-access/privacy/view/entry-price scoring
+// dimensions are demo-illustrative, matching this app's existing convention
+// for every project's pocket-level scoring (see the note atop this file).
+export const ISLE_OF_ANJARLE_POCKETS: Pocket[] = [
+  {
+    id: "isle-of-anjarle--config-2002",
+    name: "2,002 Sq.Ft. Villa Land",
+    zone: "Cliffside Estate",
+    price: 6194000,
+    sizeSqft: 2002,
+    roadAccess: 55,
+    privacy: 78,
+    amenityProximity: 85,
+    view: 90,
+    entryPriceScore: 60,
+    availability: "available",
+    coordinates: { x: 42, y: 45 },
+    description: "The smaller of the two remaining Isle of Anjarle configurations, all-inclusive pricing per the 16 September 2026 Closing Deck.",
+    strengths: [
+      "Lower total ticket size of the two available configurations",
+      "Same clifftop clubhouse, amenities and Miros hospitality access as the larger configuration",
+      "All-inclusive pricing — CAM and corpus are the only additions",
+    ],
+    tradeoffs: [
+      "Smaller land parcel than the 2,723 sq.ft. configuration",
+      "Less villa-build flexibility than the larger configuration, per the supplied sales material",
+    ],
+    verifiedFacts: [
+      { label: "Plot size", value: "2,002 sq.ft. (186 sq.m.)" },
+      { label: "Listed price", value: "₹61.94 Lakh, all-inclusive (CAM & corpus extra)" },
+      { label: "Location", value: "Isle of Anjarle, Anjarle, Konkan coast" },
+      { label: "Availability", value: "Available, per the 16 Sept 2026 Closing Deck" },
+    ],
+  },
+  {
+    id: "isle-of-anjarle--config-2723",
+    name: "2,723 Sq.Ft. Villa Land",
+    zone: "Cliffside Estate",
+    price: 8387000,
+    sizeSqft: 2723,
+    roadAccess: 55,
+    privacy: 82,
+    amenityProximity: 85,
+    view: 92,
+    entryPriceScore: 48,
+    availability: "available",
+    coordinates: { x: 58, y: 55 },
+    description: "The larger of the two remaining configurations — positioned in the supplied sales material as the stronger villa-build option with a lower price per sq.ft.",
+    strengths: [
+      "Lower price per sq.ft. than the 2,002 sq.ft. configuration",
+      "Genuine villa-build potential, per the supplied sales material",
+      "Same clifftop clubhouse, amenities and Miros hospitality access as the smaller configuration",
+    ],
+    tradeoffs: [
+      "Higher total ticket size of the two available configurations",
+    ],
+    verifiedFacts: [
+      { label: "Plot size", value: "2,723 sq.ft. (253 sq.m.)" },
+      { label: "Listed price", value: "₹83.87 Lakh, all-inclusive (CAM & corpus extra)" },
+      { label: "Location", value: "Isle of Anjarle, Anjarle, Konkan coast" },
+      { label: "Availability", value: "Available, per the 16 Sept 2026 Closing Deck" },
+    ],
+  },
+];
+
+// This project's real Expression-of-Interest amount (₹99,000, per the
+// Closing Deck) differs from every other project's generic ₹45,000
+// demo-placeholder token screen — see screen-07-token-kyc.tsx /
+// screen-08-access-unlocked.tsx, which read this instead of a hardcoded
+// constant so the token amount shown always matches the active project.
+const DEFAULT_TOKEN_AMOUNT = 45000;
+export const PROJECT_TOKEN_AMOUNT: Record<string, number> = {
+  "isle-of-anjarle": 99000,
+};
+export function getProjectTokenAmount(projectId: string): number {
+  return PROJECT_TOKEN_AMOUNT[projectId] ?? DEFAULT_TOKEN_AMOUNT;
+}
+
 // --- Multi-project support -------------------------------------------------
 // Only Aero Estate (PROJECT above) has real, sourced facts. The other 5 real
 // HoABL projects in PROJECTS don't have published pricing or plot-level
@@ -351,13 +440,39 @@ function generatePocketsFor(projectId: string): Pocket[] {
 const POCKETS_BY_PROJECT: Record<string, Pocket[]> = Object.fromEntries(
   [PROJECT.id, ...PROJECTS.map((p) => p.id)].map((id) => [id, generatePocketsFor(id)])
 );
+// Real configurations, not the generic illustrative-scaling pipeline above.
+POCKETS_BY_PROJECT["isle-of-anjarle"] = ISLE_OF_ANJARLE_POCKETS;
 
 export function getProjectPockets(projectId: string): Pocket[] {
   return POCKETS_BY_PROJECT[projectId] || POCKETS;
 }
 
+// Isle of Anjarle has real, sourced facts (see registry.ts) — unlike the
+// other projects in PROJECTS, which fall through to the generic
+// illustrative-pricing branch below.
+const ISLE_OF_ANJARLE_PROJECT: Project = {
+  id: "isle-of-anjarle",
+  name: "Isle of Anjarle — The Grand Sea Land Finale",
+  location: "Anjarle, North Ratnagiri district, Konkan coast, Maharashtra",
+  tagline: "The world's rarest Sea × Hill address",
+  heroImage: "/isle-of-anjarle-hero.webp",
+  verified: [
+    { label: "Configurations available", value: "2,002 sq.ft. (₹61.94L) and 2,723 sq.ft. (₹83.87L), all-inclusive" },
+    { label: "Expression of Interest", value: "₹99,000, fully refundable" },
+    { label: "Master plan", value: "100+ acres, designed by Sanjay Puri" },
+    { label: "Possession", value: "End of 2026, per the supplied material" },
+  ],
+  needsConfirmation: [
+    "Which MahaRERA phase/registration number applies to the specific configuration chosen",
+    "Current plot-level availability within the two open configurations",
+    "Customer-specific EMI/payment-plan eligibility",
+  ],
+  brochureUrl: DEFAULT_BROCHURE_URL,
+};
+
 export function getProjectById(id: string): Project {
   if (id === PROJECT.id) return PROJECT;
+  if (id === ISLE_OF_ANJARLE_PROJECT.id) return ISLE_OF_ANJARLE_PROJECT;
   const listing = PROJECTS.find((p) => p.id === id);
   const startingPrice = PROJECT_STARTING_PRICE[id];
   if (!listing || !startingPrice) return PROJECT;

@@ -70,6 +70,10 @@ const ACCENT_CLASSES: Record<Accent, { chip: string; icon: string; ring: string;
 // than borrowing Aero Estate's facts.
 function buildSections(project: Project): Section[] {
   const isFeatured = project.id === PROJECT.id;
+  // Isle of Anjarle has real, sourced facts (see lib/sales-agent/projects/registry.ts)
+  // beyond just the starting price — unlike the other non-featured projects,
+  // which only have illustrative pricing to show.
+  const isAnjarle = project.id === "isle-of-anjarle";
   return [
     {
       id: "location",
@@ -79,6 +83,8 @@ function buildSections(project: Project): Section[] {
       caption: "Let’s start with what matters to you about this location — accessibility, lifestyle or long-term potential.",
       speech: isFeatured
         ? `Let's start with location. ${project.name} sits in ${project.location}, roughly 40 minutes from Navi Mumbai International Airport and between Mumbai and Pune. Before I go deeper, what matters more to you here — accessibility, lifestyle, or long-term potential?`
+        : isAnjarle
+        ? `Let's start with location. ${project.name} sits where the Jog River meets the Arabian Sea, in North Ratnagiri district on the Konkan coast — the supplied material describes it as sharing Goa's own geography, one generation earlier. Before I go deeper, what matters more to you here — accessibility, lifestyle, or long-term potential?`
         : `${project.name} is located in ${project.location}. Before I show you more, what matters most to you about the location — accessibility, lifestyle, or long-term potential?`,
       verified: [
         { label: "Location", value: project.location },
@@ -86,6 +92,13 @@ function buildSections(project: Project): Section[] {
           ? [
               { label: "Distance to NMIA", value: "~40 minutes" },
               { label: "Position", value: "Equidistant between Mumbai and Pune" },
+            ]
+          : isAnjarle
+          ? [
+              { label: "Coastline", value: "9 untouched beaches along the coast; 3 — Ridley's (Anjarle) Beach, Padale Beach, Savane Beach — right at the site" },
+              { label: "Distance from Mumbai", value: "~225 km, ~5.5 hrs today, ~3–4 hrs post infrastructure upgrades" },
+              { label: "Distance from Pune", value: "~180 km, ~4.5 hrs today, ~3.5 hrs post infrastructure upgrades" },
+              { label: "Recognition", value: "UNESCO-recognised biodiversity hotspot" },
             ]
           : []),
       ],
@@ -99,14 +112,28 @@ function buildSections(project: Project): Section[] {
       caption: "Let’s look at the connectivity that matters to your use case — today and, where approved, future improvements.",
       speech: isFeatured
         ? "Now let's look at connectivity. The airport is operational today, and the approved material also references future infrastructure improvements. Are you more interested in today's connectivity or the future development story?"
+        : isAnjarle
+        ? "Now let's look at connectivity. NH 66 is already about 92% upgraded per independent research, and the Konkan Marine Expressway, Vande Bharat rail and Navi Mumbai International Airport are already underway or operational. Are you more interested in today's connectivity or the future development story?"
         : "Let's look at connectivity next. What would you like to understand first — how easy it is to reach today, or the future development around the project?",
       verified: isFeatured
         ? [
             { label: "Airport", value: "Navi Mumbai International Airport — operational" },
             { label: "Regional standing", value: "#1 of 8 national micro-markets, per Colliers (as cited by HoABL)" },
           ]
+        : isAnjarle
+        ? [
+            { label: "NH 66", value: "~470 km, upgrading to 4-lane; ~92% complete per Liases Foras research" },
+            { label: "Konkan Marine Expressway", value: "6-lane, ₹26,000 crore investment; currently at the land-acquisition stage" },
+            { label: "Rail", value: "Mumbai–Madgaon Vande Bharat — ~4 hours to Anjarle via Khed station" },
+            { label: "Airport", value: "Navi Mumbai International Airport — operations commenced Dec 2025" },
+            { label: "Ferry", value: "Mumbai–Ratnagiri Ro-Ro ferry — operational since Sept 2025" },
+          ]
         : [],
-      confirm: isFeatured ? ["Upcoming highway/expressway specifics"] : ["Regional connectivity specifics"],
+      confirm: isFeatured
+        ? ["Upcoming highway/expressway specifics"]
+        : isAnjarle
+        ? ["Konkan Marine Expressway's exact length (cited inconsistently across supplied material) and current stage"]
+        : ["Regional connectivity specifics"],
     },
     {
       id: "development",
@@ -116,12 +143,25 @@ function buildSections(project: Project): Section[] {
       caption: "Let’s separate what is already developed from the future development mentioned in the approved project material.",
       speech: isFeatured
         ? "Let's separate current development from future development. The approved project material references major regional investment and infrastructure. Would you like me to focus on what's already happening, or the future development mentioned in the material?"
+        : isAnjarle
+        ? "Let's separate what's already built from what's still underway. The clifftop clubhouse — Konkan's largest — is already inaugurated, and possession is targeted by the end of this year. Would you like me to focus on what's already delivered, or what's still to come?"
         : "Let's look at the development story. Would you like to understand what's already developed around the project, or the future development that is specifically documented?",
       verified: [
         ...(isFeatured ? [{ label: "Committed regional capital", value: "₹3,00,000 crore (as cited by HoABL)" }] : []),
-        { label: "Developer", value: "House of Abhinandan Lodha Estate Holdings Pvt Ltd" },
+        isAnjarle
+          ? { label: "Developer", value: "The House of Abhinandan Lodha (HoABL), est. 2020 — not affiliated, in any manner, with Lodha or Lodha Group" }
+          : { label: "Developer", value: "House of Abhinandan Lodha Estate Holdings Pvt Ltd" },
+        ...(isAnjarle
+          ? [
+              { label: "Master plan", value: "100+ acres, designed by Sanjay Puri Architects" },
+              { label: "Clubhouse", value: "20,000 sq.ft. clifftop clubhouse inaugurated 21 March 2026" },
+              { label: "Possession", value: "Targeted by end of 2026, per the supplied material" },
+            ]
+          : []),
       ],
-      confirm: ["Master-plan phase-wise handover dates", "Future commercial zoning"],
+      confirm: isAnjarle
+        ? ["Exact MahaRERA phase/registration number for your chosen configuration", "Master-plan phase-wise handover dates"]
+        : ["Master-plan phase-wise handover dates", "Future commercial zoning"],
     },
     {
       id: "amenities",
@@ -130,21 +170,40 @@ function buildSections(project: Project): Section[] {
       accent: "gold",
       caption: "Tell me what you value more — family use, weekend lifestyle, or hospitality — and I’ll show you the relevant amenities.",
       speech: "Let's make this relevant to you. Are amenities more important for family use, weekend stays, or the overall hospitality experience? I'll show you the most relevant part first.",
-      verified: project.verified,
-      confirm: ["Full on-site amenity list", "Maintenance charges post-handover"],
+      verified: isAnjarle
+        ? [
+            { label: "Clubhouse", value: "20,000 sq.ft., ~300 ft above sea level — infinity pool, lap pool, jacuzzi, indoor gym, games room, spa" },
+            { label: "Hospitality", value: "Run by Miros Hotels, Resorts & Palaces — 24/7 concierge, in-residence spa, wellness programme" },
+            { label: "Estate amenities", value: "30+ amenities incl. treehouses, yoga zones, open-air theatre, ziplining, rock climbing, organic gardens, pet zone, community farming" },
+          ]
+        : project.verified,
+      confirm: isAnjarle
+        ? ["Full on-site amenity handover schedule", "Maintenance/CAM charges post-handover"]
+        : ["Full on-site amenity list", "Maintenance charges post-handover"],
     },
     {
       id: "layout",
       label: "Land layout",
       icon: LayoutGrid,
       accent: "forest",
-      caption: "Here's an illustrative pocket layout, to show how plots typically get organized — not this project's actual released plan.",
-      speech: "This layout is illustrative, not the project's released plot map. When you reach the actual pocket-map stage, what would you like me to help you compare first — size, access, privacy, view, or price?",
-      verified: [
-        { label: "Pockets shown", value: "8 illustrative pockets (demo layout)" },
-        { label: "Plot sizes shown", value: "1,500 – 2,100 sq.ft. (demo layout)" },
-      ],
-      confirm: ["This project's actual plot-by-plot layout and pricing (unlocks after token + KYC)"],
+      caption: isAnjarle
+        ? "Isle of Anjarle isn't an illustrative layout — only two real configurations remain, shown here."
+        : "Here's an illustrative pocket layout, to show how plots typically get organized — not this project's actual released plan.",
+      speech: isAnjarle
+        ? "Unlike a fully illustrative layout, Isle of Anjarle currently has two real configurations left — 2,002 sq.ft. and 2,723 sq.ft., both all-inclusive pricing. When you reach the pocket map, would you like a closer look at the smaller or the larger configuration first?"
+        : "This layout is illustrative, not the project's released plot map. When you reach the actual pocket-map stage, what would you like me to help you compare first — size, access, privacy, view, or price?",
+      verified: isAnjarle
+        ? [
+            { label: "Available configurations", value: "2,002 sq.ft. (₹61.94L) and 2,723 sq.ft. (₹83.87L), both all-inclusive" },
+            { label: "Sold out", value: "1,367 sq.ft. and 1,506 sq.ft. configurations" },
+          ]
+        : [
+            { label: "Pockets shown", value: "8 illustrative pockets (demo layout)" },
+            { label: "Plot sizes shown", value: "1,500 – 2,100 sq.ft. (demo layout)" },
+          ],
+      confirm: isAnjarle
+        ? ["Exact plot-level position within each configuration", "Which MahaRERA phase applies to your chosen configuration"]
+        : ["This project's actual plot-by-plot layout and pricing (unlocks after token + KYC)"],
     },
     {
       id: "pocket-logic",
@@ -162,9 +221,13 @@ function buildSections(project: Project): Section[] {
       icon: ShieldCheck,
       accent: "forest",
       caption: "A few things worth knowing before you go further.",
-      speech: "One last thing before you move on: you can browse and shortlist as many pockets as you like, completely free. The refundable token and KYC only come in once you've actually chosen the one you want.",
+      speech: isAnjarle
+        ? "One last thing before you move on: you can browse both configurations freely, completely free. The ₹99,000 fully refundable Expression of Interest and KYC only come in once you've actually chosen the one you want."
+        : "One last thing before you move on: you can browse and shortlist as many pockets as you like, completely free. The refundable token and KYC only come in once you've actually chosen the one you want.",
       verified: [
-        { label: "Booking process", value: "Browse and shortlist freely — refundable token + KYC once you've chosen a pocket" },
+        isAnjarle
+          ? { label: "Booking process", value: "Browse both configurations freely — ₹99,000 fully refundable Expression of Interest + KYC once you've chosen one" }
+          : { label: "Booking process", value: "Browse and shortlist freely — refundable token + KYC once you've chosen a pocket" },
       ],
       confirm: project.needsConfirmation,
     },

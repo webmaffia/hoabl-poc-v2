@@ -7,17 +7,17 @@ import { Button } from "@/components/ui/button";
 import { useJourney } from "@/lib/journey-context";
 import { useAira } from "@/lib/aira-context";
 import { useVoiceCommands } from "@/lib/voice-command-context";
-import { getPocketById } from "@/lib/data";
+import { getPocketById, getProjectTokenAmount } from "@/lib/data";
 import { rankPockets } from "@/lib/recommendation";
 import { track } from "@/lib/analytics";
 import { cn, formatINR, formatLakh, computeEmi } from "@/lib/utils";
 
 const STEPS = ["KYC verification", "Payment processing", "Payment successful", "Pocket secured"];
-const TOKEN_PAID = 45000;
 const TENURES = [5, 10, 15];
 
 export function Screen08AccessUnlocked() {
-  const { next, dispatch, activePocketId, buyerProfile, pocketPreferences, projectPockets } = useJourney();
+  const { next, dispatch, activePocketId, buyerProfile, pocketPreferences, projectPockets, selectedProject } = useJourney();
+  const tokenPaid = getProjectTokenAmount(selectedProject.id);
   const { speak } = useAira();
   const [stepIdx, setStepIdx] = useState(0);
   const [done, setDone] = useState(false);
@@ -31,7 +31,7 @@ export function Screen08AccessUnlocked() {
     [projectPockets, buyerProfile, pocketPreferences]
   );
   const pocket = getPocketById(activePocketId || "") || ranked[0]?.pocket || projectPockets[0];
-  const remaining = Math.max(pocket.price - TOKEN_PAID, 0);
+  const remaining = Math.max(pocket.price - tokenPaid, 0);
   const emi = computeEmi(remaining, 9.5, tenure);
 
   useEffect(() => {
@@ -169,7 +169,7 @@ export function Screen08AccessUnlocked() {
                       <span className="font-serif text-lg text-forest-900">{formatINR(remaining)}</span>
                     </div>
                     <p className="mt-1 text-[11px] text-forest-900/40">
-                      {formatLakh(pocket.price)} total &middot; {formatINR(TOKEN_PAID)} token already paid
+                      {formatLakh(pocket.price)} total &middot; {formatINR(tokenPaid)} token already paid
                     </p>
 
                     <div className="mt-3 flex rounded-full bg-forest-900/5 p-1">
