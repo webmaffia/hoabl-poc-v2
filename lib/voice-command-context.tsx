@@ -3,9 +3,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAira } from "./aira-context";
 import { useJourney } from "./journey-context";
-import { askSalesAgent } from "./sales-agent/client";
-import { DEFAULT_LEAD } from "./sales-agent/prompt";
-import type { LeadState, SalesMessage } from "./sales-agent/types";
+import { useConversation } from "./conversation-context";
 
 export interface VoiceCommand {
   /** One or more phrases that should trigger this command (e.g. an option's label plus synonyms). */
@@ -124,18 +122,20 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
 
   const recognitionRef = useRef<any>(null);
   const commandsRef = useRef<VoiceCommand[]>([]);
-  const salesHistoryRef = useRef<SalesMessage[]>([]);
-  const leadRef = useRef<LeadState>({ ...DEFAULT_LEAD });
 
   // "Latest ref" pattern: handleTranscript below is a stable useCallback with
   // no dependencies (recreating it would tear down and rebuild the
   // SpeechRecognition instance — see its effect). These refs let it always
-  // read the current speak() and journey context without needing to be
-  // recreated whenever the buyer's profile, project or pocket changes.
+  // read the current speak()/sendUserMessage and journey context without
+  // needing to be recreated whenever the buyer's profile, project or pocket
+  // changes.
   const { speak, isSpeaking } = useAira();
-  const { selectedProject, buyerName } = useJourney();
+  const { buyerName } = useJourney();
+  const { sendUserMessage } = useConversation();
   const speakRef = useRef(speak);
   speakRef.current = speak;
+  const sendUserMessageRef = useRef(sendUserMessage);
+  sendUserMessageRef.current = sendUserMessage;
   // "Latest ref" for the same reason as speakRef — handleTranscript is a
   // stable useCallback with no deps, so it can't close over buyerName
   // directly and still see it update once the identity-capture screen sets
@@ -162,6 +162,23 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
   // the same utterance that would otherwise be checked against whatever
   // command set is registered by the time they arrive.
   const suppressUntilRef = useRef(0);
+  // Debounces the two "nothing matched a command" branches below (the
+  // buyer-profile re-prompt and the general Sales Agent handoff) — unlike
+  // command matching, which deliberately reacts to the first confident
+  // fragment, these branches have no natural "that's a match, stop" signal,
+  // so without this every one of Chrome's several same-utterance refinement
+  // fragments ("Yes" -> "Yes I" -> "Yes I have a time") fired its own
+  // separate re-prompt or Sales Agent request — visibly, a run of duplicate
+  // chat bubbles and paraphrased replies to what was really one answer.
+  // Rescheduling on every fragment and only firing once fragments stop
+  // arriving means exactly one call, using the longest (most complete) one.
+  const pendingFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearPendingFallback = () => {
+    if (pendingFallbackRef.current) {
+      clearTimeout(pendingFallbackRef.current);
+      pendingFallbackRef.current = null;
+    }
+  };
 
   const registerCommands = useCallback((commands: VoiceCommand[]) => {
     commandsRef.current = commands;
@@ -190,6 +207,7 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
 
     const testMatch = commandsRef.current.find((cmd) => cmd.test?.(text));
     if (testMatch) {
+      clearPendingFallback();
       suppressUntilRef.current = Date.now() + 1500;
       recognitionRef.current?.abort();
       testMatch.action(text);
@@ -208,59 +226,49 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
       }
     }
     if (best) {
+      clearPendingFallback();
       suppressUntilRef.current = Date.now() + 1500;
       recognitionRef.current?.abort();
       best.action(text);
       return;
     }
 
-    // During the buyer-profile "call" (Screen02's 3 profiling questions),
-    // Aira should only ever ask her question and accept an answer to it —
-    // never hand off to the general Sales Agent mid-profile. If nothing
-    // matched, re-prompt for a proper answer instead of routing to the
-    // sales agent; the agent only takes over once the profile is built and
-    // callActive goes false.
-    if (callActiveRef.current) {
-      speakRef.current("Sorry, I didn't quite get that — could you say that again, or tap one of the options?");
-      return;
-    }
+    // Neither branch below has a "that's a match, stop" signal the way
+    // command matching does above, so — unlike those — don't act on this
+    // fragment immediately. Reschedule on every call; only the last
+    // fragment of the utterance (the one after which no newer one arrives
+    // for 600ms) actually fires. See pendingFallbackRef above.
+    clearPendingFallback();
+    pendingFallbackRef.current = setTimeout(() => {
+      pendingFallbackRef.current = null;
 
-    // Nothing on the current screen recognizes this as a command. Route it
-    // through the OpenAI Sales Agent. There is deliberately no scripted
-    // QA fallback here: if the AI provider is unavailable, the UI should expose the
-    // real problem instead of making the avatar appear to be driven by the
-    // old pre-fed responses.
-    void (async () => {
-      try {
-        // The identity-capture screen captures the buyer's name directly
-        // (a reliable, structured source) — prefer it over waiting for the
-        // LLM to infer a name from conversation, but don't clobber a name
-        // the LLM already picked up before that screen ran.
-        if (buyerNameRef.current && !leadRef.current.customerName) {
-          leadRef.current = { ...leadRef.current, customerName: buyerNameRef.current };
-        }
-        const result = await askSalesAgent({
-          message: text,
-          context: typeof document !== "undefined" ? document.body.dataset.walkthroughContext || null : null,
-          projectId: selectedProject?.id,
-          history: salesHistoryRef.current,
-          lead: leadRef.current,
-        });
-        salesHistoryRef.current = [
-          ...salesHistoryRef.current,
-          { role: "user" as const, content: text },
-          { role: "assistant" as const, content: result.response },
-        ].slice(-12);
-        leadRef.current = result.lead;
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("sales-agent:response", { detail: result }));
-        }
-        speakRef.current(result.response);
-      } catch (error) {
-        console.error("[SalesAgent] Request failed:", error);
-        speakRef.current("I’m having trouble connecting to the sales assistant right now. Please try again in a moment.");
+      // During the buyer-profile "call" (Screen02's 3 profiling questions),
+      // Aira should only ever ask her question and accept an answer to it —
+      // never hand off to the general Sales Agent mid-profile. If nothing
+      // matched, re-prompt for a proper answer instead of routing to the
+      // sales agent; the agent only takes over once the profile is built
+      // and callActive goes false.
+      if (callActiveRef.current) {
+        speakRef.current("Sorry, I didn't quite get that — could you say that again, or tap one of the options?");
+        return;
       }
-    })();
+
+      // Nothing on the current screen recognizes this as a command. Route it
+      // through the OpenAI Sales Agent (via the shared conversation
+      // transcript — see lib/conversation-context.tsx — so this turn is
+      // also visible if the user switches to the typed chat dock). There is
+      // deliberately no scripted QA fallback here: if the AI provider is
+      // unavailable, the UI should expose the real problem instead of
+      // making the avatar appear to be driven by the old pre-fed responses.
+      void sendUserMessageRef.current(text, {
+        context: typeof document !== "undefined" ? document.body.dataset.walkthroughContext || null : null,
+        // The identity-capture screen captures the buyer's name directly (a
+        // reliable, structured source) — sendUserMessage prefers it over
+        // waiting for the LLM to infer a name from conversation, but won't
+        // clobber a name the LLM already picked up before that screen ran.
+        buyerName: buyerNameRef.current,
+      });
+    }, 600);
   }, []);
 
   useEffect(() => {

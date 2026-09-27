@@ -1,7 +1,13 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAira } from "@/lib/aira-context";
+import { cn } from "@/lib/utils";
+
+const FORWARD_SRC = "/Real_estate_advisor_talking_20260927203735.mp4";
+// Same clip played backwards (generated with `ffmpeg -vf reverse`), used to
+// boomerang the loop — see the comment on AiraPortrait for why.
+const REVERSED_SRC = "/avatar-talking-reversed.mp4";
 
 /**
  * The raw video-or-portrait content for Aira's avatar. Registers its own
@@ -11,7 +17,7 @@ import { useAira } from "@/lib/aira-context";
  * live feed.
  */
 export function AiraVisual({ className }: { className?: string }) {
-  const { status, attachVideo, detachVideo } = useAira();
+  const { status, isSpeaking, attachVideo, detachVideo } = useAira();
   const videoEl = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -22,32 +28,88 @@ export function AiraVisual({ className }: { className?: string }) {
   }, [status]);
 
   if (status !== "live") {
-    return <AiraPortrait className={className} />;
+    return <AiraPortrait className={className} isSpeaking={isSpeaking} />;
   }
 
   return <video ref={videoEl} autoPlay playsInline className={className ?? "h-full w-full object-cover"} />;
 }
 
-export function AiraPortrait({ className }: { className?: string }) {
+/**
+ * Free fallback avatar: a pre-recorded talking-head clip, muted (it has its
+ * own baked-in narration audio, which would talk over the actual TTS voice —
+ * see lib/aira-context.tsx). Its playback is driven by `isSpeaking` rather
+ * than looping unconditionally, so the clip is only in motion for exactly as
+ * long as Aira is actually talking, and holds on its first frame the rest of
+ * the time instead of visibly "talking" over silence.
+ *
+ * The clip's own first and last frames don't quite match, so a plain `loop`
+ * attribute produced a visible jump-cut every ~10s for any line that ran
+ * longer than one play-through. Instead this boomerangs between the clip
+ * and a pre-rendered reverse of the same clip: forward plays to its last
+ * frame, the reverse picks up from exactly that frame and plays back to the
+ * first, forward picks up from exactly *that* frame, and so on — every
+ * hand-off starts on the frame the previous one ended on, so there's never
+ * a cut, for however long the current line's real TTS audio actually runs.
+ */
+export function AiraPortrait({ className, isSpeaking = false }: { className?: string; isSpeaking?: boolean }) {
+  const forwardRef = useRef<HTMLVideoElement>(null);
+  const reversedRef = useRef<HTMLVideoElement>(null);
+  const [showForward, setShowForward] = useState(true);
+
+  useEffect(() => {
+    const forward = forwardRef.current;
+    const reversed = reversedRef.current;
+    if (!forward || !reversed) return;
+
+    reversed.pause();
+    reversed.currentTime = 0;
+    setShowForward(true);
+
+    if (isSpeaking) {
+      forward.currentTime = 0;
+      forward.play().catch(() => {});
+    } else {
+      forward.pause();
+      forward.currentTime = 0;
+    }
+  }, [isSpeaking]);
+
+  const handleForwardEnded = () => {
+    const reversed = reversedRef.current;
+    if (!isSpeaking || !reversed) return;
+    setShowForward(false);
+    reversed.currentTime = 0;
+    reversed.play().catch(() => {});
+  };
+
+  const handleReversedEnded = () => {
+    const forward = forwardRef.current;
+    if (!isSpeaking || !forward) return;
+    setShowForward(true);
+    forward.currentTime = 0;
+    forward.play().catch(() => {});
+  };
+
   return (
-    <svg
-      viewBox="0 0 100 100"
-      preserveAspectRatio="xMidYMid slice"
-      className={className ?? "h-full w-full"}
-      role="img"
-      aria-label="Aira, AI land advisor"
-    >
-      <defs>
-        <radialGradient id="airaBgShared" cx="50%" cy="35%" r="75%">
-          <stop offset="0%" stopColor="#3B1F5C" />
-          <stop offset="100%" stopColor="#0A0310" />
-        </radialGradient>
-      </defs>
-      <rect width="100" height="100" fill="url(#airaBgShared)" />
-      <circle cx="50" cy="42" r="20" fill="#F8F6F2" />
-      <path d="M50 20c12 0 20 9 20 20 0 3-1 6-2 8-2-6-8-9-18-9s-16 3-18 9c-1-2-2-5-2-8 0-11 8-20 20-20z" fill="#241536" />
-      <path d="M18 92c3-16 15-26 32-26s29 10 32 26" fill="#AC8336" opacity="0.9" />
-      <path d="M18 92c3-16 15-24 32-24s29 8 32 24" fill="#0A0310" opacity="0.35" />
-    </svg>
+    <div className={cn("relative overflow-hidden bg-forest-950", className)}>
+      <video
+        ref={forwardRef}
+        src={FORWARD_SRC}
+        muted
+        playsInline
+        preload="auto"
+        onEnded={handleForwardEnded}
+        className={cn("absolute inset-0 h-full w-full object-cover", !showForward && "opacity-0")}
+      />
+      <video
+        ref={reversedRef}
+        src={REVERSED_SRC}
+        muted
+        playsInline
+        preload="auto"
+        onEnded={handleReversedEnded}
+        className={cn("absolute inset-0 h-full w-full object-cover", showForward && "opacity-0")}
+      />
+    </div>
   );
 }

@@ -31,8 +31,21 @@ import { NextResponse } from "next/server";
  * one your account has via HEYGEN_VOICE_AGENT_ID or HEYGEN_CONTEXT_ID; when
  * both are set, HEYGEN_CONTEXT_ID takes priority (a context carries the
  * knowledge-base persona, which is the more specific configuration).
+ *
+ * HEYGEN_ENABLED gates all of the above: set it to exactly "true" to use
+ * HeyGen at all. Anything else (unset, "false", ...) skips HeyGen entirely
+ * and goes straight to the app's free fallback (browser SpeechSynthesis
+ * voice + animated portrait — see lib/aira-context.tsx), even if API
+ * credentials happen to be configured.
  */
 export async function POST() {
+  if (process.env.HEYGEN_ENABLED !== "true") {
+    return NextResponse.json(
+      { error: "HeyGen disabled (set HEYGEN_ENABLED=true to use it)" },
+      { status: 501 }
+    );
+  }
+
   const apiKey = process.env.HEYGEN_API_KEY;
   const avatarId = process.env.HEYGEN_AVATAR_ID;
   const voiceAgentId = process.env.HEYGEN_VOICE_AGENT_ID;

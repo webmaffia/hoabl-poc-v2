@@ -32,6 +32,30 @@ const MS_PER_CHAR = 45;
 const MIN_SPEAK_MS = 1400;
 const MAX_SPEAK_MS = 6000;
 
+// Known female Indian-English voice names shipped by common platforms
+// (Microsoft Neerja/Heera on Windows + Edge; Google's Indian voices on
+// Chrome/Android often carry no gender in the name, so they're matched by
+// locale alone below). Named male Indian voices are excluded explicitly so
+// they're never preferred over an unnamed-gender Indian voice.
+const INDIAN_FEMALE_VOICE_NAMES = ["neerja", "heera", "kalpana", "isha", "priya"];
+const INDIAN_MALE_VOICE_NAMES = ["ravi", "prabhat"];
+
+/** Best-effort pick of an Indian female voice from whatever the browser/OS
+ * exposes. Availability varies a lot by platform — Windows needs the
+ * "English (India)" speech pack installed; Chrome/Android usually has more
+ * options. Returns null (caller keeps the browser's default voice) if
+ * nothing Indian is installed at all. */
+function pickIndianFemaleVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+  const indian = voices.filter((v) => /^(en-in|hi-in)/i.test(v.lang));
+  if (indian.length === 0) return null;
+
+  const namedFemale = indian.find((v) => INDIAN_FEMALE_VOICE_NAMES.some((n) => v.name.toLowerCase().includes(n)));
+  if (namedFemale) return namedFemale;
+
+  const notNamedMale = indian.find((v) => !INDIAN_MALE_VOICE_NAMES.some((n) => v.name.toLowerCase().includes(n)));
+  return notNamedMale ?? indian[0];
+}
+
 export function AiraProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<AiraStatus>("connecting");
   const [caption, setCaption] = useState("");
@@ -50,6 +74,28 @@ export function AiraProvider({ children }: { children: React.ReactNode }) {
   // live, or that line is silently lost (this was happening for screen 1's
   // opening line on every load, since connecting takes several seconds).
   const pendingSpeechRef = useRef<string | null>(null);
+  // getVoices() returns [] on first call in some browsers (notably Chrome)
+  // until the async "voiceschanged" event fires once — cached here so the
+  // Indian-voice lookup below still works once it's populated.
+  const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
+  // The <audio> element currently playing the free network-TTS voice (see
+  // speakViaNetworkTTS), if any.
+  const audioElRef = useRef<HTMLAudioElement | null>(null);
+  // Bumped on every speakFallback()/stopSpeaking() call so an in-flight
+  // network-TTS fetch that resolves after being superseded (a newer line
+  // started, or playback was stopped) can detect it's stale and no-op
+  // instead of playing over/after the newer line.
+  const speechRequestIdRef = useRef(0);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    function loadVoices() {
+      voicesRef.current = window.speechSynthesis.getVoices();
+    }
+    loadVoices();
+    window.speechSynthesis.addEventListener("voiceschanged", loadVoices);
+    return () => window.speechSynthesis.removeEventListener("voiceschanged", loadVoices);
+  }, []);
 
   const attachToAll = useCallback(() => {
     if (!sessionRef.current) return;
@@ -61,6 +107,111 @@ export function AiraProvider({ children }: { children: React.ReactNode }) {
       }
     });
   }, []);
+
+  // Free fallback voice, tier 2: the browser's own SpeechSynthesis. Used
+  // only when the network TTS below is unreachable — its voices are usually
+  // more robotic, but they work fully offline/client-side. No deps on
+  // `status` on purpose — this also gets called from connect()'s fallback
+  // branches below (via speakFallback), where a `speak()` closure captured
+  // at an earlier render could otherwise reference a stale status.
+  const speakViaBrowserTTS = useCallback((text: string) => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.volume = mutedRef.current ? 0 : 1;
+
+      const voices = voicesRef.current.length ? voicesRef.current : window.speechSynthesis.getVoices();
+      const indianVoice = pickIndianFemaleVoice(voices);
+      if (indianVoice) utterance.voice = indianVoice;
+      // Setting lang even without a matched `voice` still nudges some
+      // platforms (e.g. Edge) toward an Indian-locale system voice.
+      utterance.lang = indianVoice?.lang ?? "en-IN";
+
+      utterance.onstart = () => setIsSpeaking(true);
+      utterance.onend = () => setIsSpeaking(false);
+      utterance.onerror = () => setIsSpeaking(false);
+      window.speechSynthesis.speak(utterance);
+      return;
+    }
+
+    // No SpeechSynthesis available (e.g. an older browser) — simulate a
+    // speaking state from estimated reading time so the portrait still
+    // feels alive, even without real audio.
+    if (speakTimerRef.current) clearTimeout(speakTimerRef.current);
+    const duration = Math.min(MAX_SPEAK_MS, Math.max(MIN_SPEAK_MS, text.length * MS_PER_CHAR));
+    setIsSpeaking(true);
+    speakTimerRef.current = setTimeout(() => setIsSpeaking(false), duration);
+  }, []);
+
+  // Free fallback voice, tier 1: natural neural TTS via our own
+  // /api/aira/speech route (see that file for how/why). Points the <audio>
+  // element straight at the route's URL rather than fetch()-ing the whole
+  // clip into a blob first, which is simpler but doesn't actually start
+  // playback any sooner: traced this directly (server chunks genuinely
+  // arrive progressively over the wire — confirmed with a raw Node http
+  // client — but Chrome's own <audio> element still holds `readyState` at 0
+  // until the entire chunked-with-no-Content-Length stream finishes, then
+  // jumps straight to a fully-buffered HAVE_ENOUGH_DATA). So however this is
+  // fetched, "audio actually started" is unavoidably ~1-3+ seconds behind
+  // "the response text arrived", scaling with how long the line is — that
+  // gap, not anything about fetch vs. streaming, was the real cause of the
+  // avatar looking frozen/unsynced. Fixed at the call site (speakFallback)
+  // instead: the avatar now starts moving immediately when we start trying
+  // to speak, not when audio playback actually begins.
+  //
+  // Failure (bad response, network error, blocked codec) surfaces as the
+  // element's `error` event rather than a rejected fetch, so that's what
+  // triggers the drop-down to the browser-voice tier here.
+  const speakViaNetworkTTS = useCallback(
+    (text: string, requestId: number) => {
+      const audio = new Audio();
+      // Muted-autoplay is allowed by browser policy even before any user
+      // gesture (same reasoning as the HeyGen <video> handling below) —
+      // unlockAudio() unmutes it on the first gesture.
+      audio.muted = gestureOccurredRef.current ? mutedRef.current : true;
+
+      const cleanup = () => {
+        setIsSpeaking(false);
+        if (audioElRef.current === audio) audioElRef.current = null;
+      };
+      audio.onended = cleanup;
+      audio.onerror = () => {
+        cleanup();
+        if (requestId === speechRequestIdRef.current) speakViaBrowserTTS(text);
+      };
+
+      audioElRef.current = audio;
+      audio.src = `/api/aira/speech?text=${encodeURIComponent(text)}`;
+      audio.play().catch(() => {
+        /* blocked by autoplay policy until a gesture — unlockAudio() retries it */
+      });
+    },
+    [speakViaBrowserTTS]
+  );
+
+  const speakFallback = useCallback(
+    (text: string) => {
+      const requestId = ++speechRequestIdRef.current;
+
+      if (audioElRef.current) {
+        audioElRef.current.pause();
+        audioElRef.current = null;
+      }
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+
+      // Start the avatar moving the instant we begin trying to speak,
+      // rather than waiting for audio.onplay — the network-TTS request can
+      // take a few real seconds (see speakViaNetworkTTS), and the avatar
+      // sitting frozen for that whole window is what actually read as "not
+      // synced to the response", far more than the video being a couple
+      // seconds ahead of the sound that eventually catches up to it.
+      setIsSpeaking(true);
+      speakViaNetworkTTS(text, requestId);
+    },
+    [speakViaNetworkTTS]
+  );
 
   useEffect(() => {
     // Aira starts speaking on screen 1 before the user has clicked anything,
@@ -77,6 +228,10 @@ export function AiraProvider({ children }: { children: React.ReactNode }) {
         el.muted = mutedRef.current;
         el.play().catch(() => {});
       });
+      if (audioElRef.current) {
+        audioElRef.current.muted = mutedRef.current;
+        audioElRef.current.play().catch(() => {});
+      }
     }
     window.addEventListener("pointerdown", unlockAudio);
     window.addEventListener("keydown", unlockAudio);
@@ -103,6 +258,10 @@ export function AiraProvider({ children }: { children: React.ReactNode }) {
       const token = await fetchHeygenToken();
       if (!token) {
         setStatus("fallback");
+        if (pendingSpeechRef.current) {
+          speakFallback(pendingSpeechRef.current);
+          pendingSpeechRef.current = null;
+        }
         return;
       }
 
@@ -134,6 +293,10 @@ export function AiraProvider({ children }: { children: React.ReactNode }) {
         // eslint-disable-next-line no-console
         console.error("[Aira] HeyGen LiveAvatar session failed, falling back:", err);
         setStatus("fallback");
+        if (pendingSpeechRef.current) {
+          speakFallback(pendingSpeechRef.current);
+          pendingSpeechRef.current = null;
+        }
       }
     }
 
@@ -176,11 +339,23 @@ export function AiraProvider({ children }: { children: React.ReactNode }) {
           el.muted = next;
         });
       }
+      // The network-TTS <audio> element supports live mute toggling.
+      if (audioElRef.current) {
+        audioElRef.current.muted = next;
+      }
+      // SpeechSynthesisUtterance's volume can't be changed once it has
+      // started — muting while Aira is talking via the browser-voice
+      // fallback cancels the current line outright rather than leaving it
+      // audible.
+      if (next && typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
       return next;
     });
   }, []);
 
   const stopSpeaking = useCallback(() => {
+    speechRequestIdRef.current++; // invalidate any in-flight network-TTS fetch
     if (speakTimerRef.current) {
       clearTimeout(speakTimerRef.current);
       speakTimerRef.current = null;
@@ -193,6 +368,13 @@ export function AiraProvider({ children }: { children: React.ReactNode }) {
       } catch {
         /* nothing more we can do here */
       }
+    }
+    if (audioElRef.current) {
+      audioElRef.current.pause();
+      audioElRef.current = null;
+    }
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
     }
   }, []);
 
@@ -218,16 +400,19 @@ export function AiraProvider({ children }: { children: React.ReactNode }) {
 
       if (status === "connecting") {
         // Session isn't live yet — remember this line so it can be replayed
-        // the moment the session connects, instead of being silently lost.
+        // once we know which way this goes: HeyGen repeats it once live, or
+        // the free browser-voice fallback speaks it (see connect() above).
+        // Don't speak it now — if HeyGen still connects successfully a
+        // moment later, we'd get both voices talking over each other.
         pendingSpeechRef.current = text;
+        return;
       }
 
-      // Fallback: simulate a speaking state so the local portrait still feels alive.
-      const duration = Math.min(MAX_SPEAK_MS, Math.max(MIN_SPEAK_MS, text.length * MS_PER_CHAR));
-      setIsSpeaking(true);
-      speakTimerRef.current = setTimeout(() => setIsSpeaking(false), duration);
+      // status === "fallback": no live HeyGen session (disabled, unconfigured,
+      // or disconnected) — speak with the browser's own free TTS voice.
+      speakFallback(text);
     },
-    [status]
+    [status, speakFallback]
   );
 
   return (

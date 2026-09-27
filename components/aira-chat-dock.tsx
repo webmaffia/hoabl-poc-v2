@@ -6,19 +6,11 @@ import { Minimize2, Send } from "lucide-react";
 import { useVoice } from "@/lib/voice-command-context";
 import { useAira } from "@/lib/aira-context";
 import { useJourney } from "@/lib/journey-context";
-import { askSalesAgent } from "@/lib/sales-agent/client";
-import { DEFAULT_LEAD } from "@/lib/sales-agent/prompt";
-import type { LeadState, SalesMessage } from "@/lib/sales-agent/types";
+import { useConversation } from "@/lib/conversation-context";
 import { AiraVisual } from "./aira-visual";
 import { cn } from "@/lib/utils";
 
 const STARTER_PROMPTS = ["What's the price?", "Which pocket suits me?", "Is this refundable?", "Talk to an advisor"];
-
-export interface ChatMsg {
-  id: string;
-  from: "aira" | "user";
-  text: string;
-}
 
 /**
  * Chat mode's presentation: a full-screen "video call" takeover (see
@@ -30,19 +22,18 @@ export interface ChatMsg {
  * Deliberately does NOT listen to the shared aira-context `caption` — that
  * value also changes from whatever the screen *behind* this overlay happens
  * to be narrating (its own mount effects, timers, etc.), which isn't a
- * response to anything the user typed here and made the transcript look
- * like it was answering a different conversation. Every message shown here
- * is instead generated directly from what the user actually sent, using the
- * same context-aware answer engine as voice mode's fallback.
+ * response to anything said in this conversation. Messages instead come
+ * from the shared conversation transcript (lib/conversation-context.tsx),
+ * which both this typed dock and voice mode's general Q&A fallback append
+ * to — so a conversation started one way (e.g. by voice) is still fully
+ * visible here if the user switches to chat mid-conversation.
  */
 export function AiraChatDock() {
   const { mode, setMode, setAvatarExpanded, supported } = useVoice();
-  const { status, speak } = useAira();
-  const { selectedProject, buyerName } = useJourney();
-  const historyRef = useRef<SalesMessage[]>([]);
-  const leadRef = useRef<LeadState>({ ...DEFAULT_LEAD });
+  const { status } = useAira();
+  const { buyerName } = useJourney();
+  const { messages, sendUserMessage } = useConversation();
   const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -55,37 +46,10 @@ export function AiraChatDock() {
     const question = text.trim();
     if (!question) return;
     setDraft("");
-    setMessages((prev) => [...prev, { id: `u-${Date.now()}`, from: "user", text: question }]);
-
-    void (async () => {
-      try {
-        // Prefer the name captured on the identity-capture screen (a
-        // reliable, structured source) over waiting for the LLM to infer
-        // one from conversation, without clobbering a name it already has.
-        if (buyerName && !leadRef.current.customerName) {
-          leadRef.current = { ...leadRef.current, customerName: buyerName };
-        }
-        const result = await askSalesAgent({
-          message: question,
-          projectId: selectedProject?.id,
-          history: historyRef.current,
-          lead: leadRef.current,
-        });
-        historyRef.current = [
-          ...historyRef.current,
-          { role: "user" as const, content: question },
-          { role: "assistant" as const, content: result.response },
-        ].slice(-12);
-        leadRef.current = result.lead;
-        setMessages((prev) => [...prev, { id: `a-${Date.now()}`, from: "aira", text: result.response }]);
-        speak(result.response);
-      } catch (error) {
-        console.error("[SalesAgent] Chat request failed:", error);
-        const answer = "I’m having trouble connecting to the sales assistant right now. Please try again in a moment.";
-        setMessages((prev) => [...prev, { id: `a-${Date.now()}`, from: "aira", text: answer }]);
-        speak(answer);
-      }
-    })();
+    void sendUserMessage(question, {
+      context: typeof document !== "undefined" ? document.body.dataset.walkthroughContext || null : null,
+      buyerName,
+    });
   };
 
   // Docks Aira back into the small floating bottom-right widget — same

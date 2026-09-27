@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { JourneyProvider, useJourney } from "@/lib/journey-context";
 import { AiraProvider } from "@/lib/aira-context";
+import { ConversationProvider } from "@/lib/conversation-context";
 import { VoiceCommandProvider, useVoice } from "@/lib/voice-command-context";
 import { DeviceFrame } from "@/components/device-frame";
 import { AiraPanel } from "@/components/aira-panel";
@@ -125,11 +126,13 @@ export default function Home() {
   return (
     <JourneyProvider>
       <AiraProvider>
-        <VoiceCommandProvider>
-          <DeviceFrame>
-            <JourneyScreen />
-          </DeviceFrame>
-        </VoiceCommandProvider>
+        <ConversationProvider>
+          <VoiceCommandProvider>
+            <DeviceFrame>
+              <JourneyScreen />
+            </DeviceFrame>
+          </VoiceCommandProvider>
+        </ConversationProvider>
       </AiraProvider>
     </JourneyProvider>
   );
