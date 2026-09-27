@@ -9,15 +9,28 @@ const STOP_WORDS = new Set([
   "much", "any", "there", "and", "or", "to", "of", "a", "an", "in", "on", "it", "i", "we",
 ]);
 
+// Naive singularization ("appreciations" -> "appreciation", "beaches" ->
+// "beache" — imperfect but good enough to stop a trivial plural/singular
+// mismatch from silently dropping an otherwise-relevant fact out of the
+// keyword-fallback's scoring).
+function singularize(token: string): string {
+  return token.length > 4 && token.endsWith("s") && !token.endsWith("ss") ? token.slice(0, -1) : token;
+}
+
 function tokens(text: string): string[] {
-  return text.toLowerCase().replace(/[^a-z0-9₹\s]/g, " ").split(/\s+/).filter((t) => t.length > 2 && !STOP_WORDS.has(t));
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9₹\s]/g, " ")
+    .split(/\s+/)
+    .filter((t) => t.length > 2 && !STOP_WORDS.has(t))
+    .map(singularize);
 }
 
 function flatten(packageData: ProjectKnowledgePackage): Array<{ section: string; text: string }> {
   return Object.entries(packageData.sections).flatMap(([section, items]) => items.map((text) => ({ section, text })));
 }
 
-interface RetrievedMatch {
+export interface RetrievedMatch {
   section: string;
   text: string;
   sourceName: string;
@@ -58,6 +71,24 @@ export async function retrieveProjectKnowledge(projectId: string | null | undefi
   }
 
   return { project, matches: keywordFallback(project, query, limit), source: "registry-fallback" as const };
+}
+
+/**
+ * All chunks from one named section, bypassing keyword scoring entirely.
+ * Used to force-include a project's full investment thesis once the buyer's
+ * stated objective signals they care about it — a single-turn keyword match
+ * against the exact section name is too fragile a gate for something this
+ * central to the pitch (e.g. "long term appreciations" missing "investment"
+ * facts that only ever say "appreciation").
+ */
+export function getSectionFacts(project: ProjectKnowledgePackage, section: string): RetrievedMatch[] {
+  return (project.sections[section] || []).map((text) => ({
+    section,
+    text,
+    sourceName: "project-registry",
+    sourceType: "registry",
+    score: 0,
+  }));
 }
 
 export function resolveProjectFromMessage(message: string): ProjectKnowledgePackage | null {

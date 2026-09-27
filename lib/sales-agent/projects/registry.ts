@@ -152,8 +152,8 @@ export const PROJECT_KNOWLEDGE: Record<string, ProjectKnowledgePackage> = {
       "HoABL's current total location count (cited as both 8+ and 16 across supplied material).",
       "Exact village-level land-price mapping in the Liases Foras comparison chart, and which specific appreciation multiple (if any) applies to Anjarle itself.",
       "Customer-specific EMI/payment-plan eligibility and schedule beyond the milestone percentages listed.",
-      "Current plot-level availability within the 2,002 sq.ft. and 2,723 sq.ft. configurations.",
-      "Any information dated after 16 September 2026 (the supplied material's date) — construction progress, pricing, or possession updates should be reconfirmed with the advisor.",
+      "Which exact numbered plot/unit within the 2,002 sq.ft. or 2,723 sq.ft. configuration gets allocated to a given customer (the configuration's price and availability status ARE confirmed — see configurations/payment sections — only the specific plot assignment happens at booking).",
+      "Construction progress and possession status beyond what's dated 16 September 2026 in the supplied material.",
       "Legal, tax, title or regulatory advice beyond restating the material's own stated claims."
     ]
   },

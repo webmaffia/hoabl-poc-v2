@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildSalesSystemPrompt, DEFAULT_LEAD } from "@/lib/sales-agent/prompt";
-import { retrieveProjectKnowledge, resolveProjectFromMessage } from "@/lib/sales-agent/projects/retrieval";
+import { retrieveProjectKnowledge, resolveProjectFromMessage, getSectionFacts } from "@/lib/sales-agent/projects/retrieval";
 import { getProjectKnowledge } from "@/lib/sales-agent/projects/registry";
 import type {
   LeadState,
@@ -129,10 +129,31 @@ export async function POST(request: Request) {
   // must work even when Gemini/Qdrant are not configured yet.
   const requestedProject = resolveProjectFromMessage(body.message) ?? getProjectKnowledge(body.projectId) ?? getProjectKnowledge("aero-estate");
   const retrieval = await retrieveProjectKnowledge(requestedProject?.id ?? null, body.message, 8);
+
+  // Core sales facts — investment thesis, pricing and payment terms — are
+  // load-bearing every single turn, not niche topics to detect and fetch on
+  // demand. Two rounds of keyword/objective-based gating (lead.objective
+  // from the PRIOR turn; then a regex over the current message) both still
+  // missed real cases — e.g. a buyer just saying "long term" carries the
+  // intent to a person but matches no keyword, and a buyer picking a
+  // configuration by name got a reply hedging that "the price I quoted was
+  // unverified" because the turn that actually settled the price (with the
+  // Closing Deck cited as authoritative) never got retrieved. Given these
+  // sections are each only a handful of short lines, unconditionally
+  // including them is cheap insurance against retrieval ever again causing
+  // the model to hedge on facts that are, in fact, already settled.
+  let factLines = retrieval.matches.map((match) => `[${match.section}] ${match.text}`);
+  if (requestedProject) {
+    const alwaysOnSections = ["configurations", "payment", "investment", "connectivity", "futureDevelopment"].flatMap(
+      (section) => getSectionFacts(requestedProject, section).map((match) => `[${match.section}] ${match.text}`)
+    );
+    factLines = Array.from(new Set([...factLines, ...alwaysOnSections]));
+  }
+
   const history: SalesMessage[] = Array.isArray(body.history) ? body.history.slice(-12) : [];
 
   const messages = [
-    { role: "system" as const, content: buildSalesSystemPrompt(lead, requestedProject, retrieval.matches.map((match) => `[${match.section}] ${match.text}`), body.context) },
+    { role: "system" as const, content: buildSalesSystemPrompt(lead, requestedProject, factLines, body.context) },
     ...history.map((message) => ({ role: message.role, content: message.content })),
     { role: "user" as const, content: body.message.trim() },
   ];
