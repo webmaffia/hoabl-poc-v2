@@ -6,7 +6,8 @@ import { ArrowRight, Check, ChevronLeft } from "lucide-react";
 import { AiraVisual } from "@/components/aira-visual";
 import { useJourney } from "@/lib/journey-context";
 import { useAira } from "@/lib/aira-context";
-import { useVoice, useVoiceCommands } from "@/lib/voice-command-context";
+import { useVoice, useVoiceCommands, useIntentFallback } from "@/lib/voice-command-context";
+import { classifyBuyerProfileIntent } from "@/lib/sales-agent/client";
 import { track } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 import { BuyerProfile } from "@/lib/types";
@@ -141,7 +142,7 @@ const STEPS: Step[] = [
 export function Screen02BuyerProfile() {
   const { next, back, dispatch, buyerProfile } = useJourney();
   const { speak, status } = useAira();
-  const { supported: voiceSupported, setCallActive, pauseVoiceInput } = useVoice();
+  const { setCallActive, pauseVoiceInput } = useVoice();
   const [stepIdx, setStepIdx] = useState(0);
   const [selection, setSelection] = useState<string[]>([]);
   // The closing line shown just before this screen hands off to the next
@@ -325,6 +326,28 @@ export function Screen02BuyerProfile() {
         }))
   );
 
+  // Once none of the matchers above recognize what was said (only after the
+  // debounce in voice-command-context's handleTranscript has settled on the
+  // final fragment — see useIntentFallback), ask the LLM which option the
+  // buyer's actual phrasing was closest to instead of just re-prompting on
+  // every real-world phrasing those hand-written matchers didn't anticipate.
+  useIntentFallback(
+    typing || ending
+      ? null
+      : async (heard: string) => {
+          setTyping(true);
+          const value = await classifyBuyerProfileIntent({
+            question: step.question,
+            options: step.options.map((o) => ({ value: o.value, label: o.label })),
+            heard,
+          });
+          setTyping(false);
+          if (!value) return false;
+          selectOptionByVoice(value);
+          return true;
+        }
+  );
+
   return (
     <div className="relative h-full w-full overflow-hidden bg-forest-950">
       {/* Full-screen "video call" presentation — Aira fills the whole frame
@@ -429,11 +452,6 @@ export function Screen02BuyerProfile() {
                       );
                     })}
                   </div>
-                  {voiceSupported && (
-                    <p className="text-[11px] text-ivory-100/60">
-                      Or tap &ldquo;Talk to Aira&rdquo; below and just say your answer
-                    </p>
-                  )}
                   {step.multi && (
                     <p className="text-xs text-ivory-100/50">
                       {selection.length}/{step.maxSelect} selected

@@ -1,5 +1,6 @@
 "use client";
 
+import type { PointerEvent } from "react";
 import { motion } from "framer-motion";
 import { Mic, MessageCircle, StopCircle, Volume2, VolumeX } from "lucide-react";
 import { useVoice } from "@/lib/voice-command-context";
@@ -8,8 +9,10 @@ import { cn } from "@/lib/utils";
 
 /**
  * A fixed, non-draggable pill toolbar pinned to the bottom of every screen.
- * "Talk" is the default, primary action — tapping it (or just starting to
- * talk) expands Aira to full screen (see aira-panel.tsx). "Chat" is a
+ * "Hold to talk" is the default, primary action — press-and-hold (not a
+ * tap) expands Aira to full screen (see aira-panel.tsx) and records for as
+ * long as the button is held, resolving the full question only on release.
+ * "Chat" is a
  * secondary, opt-in switch to a typed 50/50 split view (aira-chat-dock.tsx)
  * for when voice isn't convenient — never the default. A "stop" control
  * appears here (rather than on individual screens) whenever Aira is
@@ -17,12 +20,29 @@ import { cn } from "@/lib/utils";
  * screen.
  */
 export function AiraCtaBar() {
-  const { supported, listening, mode, setMode, toggleListening, micError, callActive } = useVoice();
+  const { supported, listening, mode, setMode, startHold, endHold, micError, callActive } = useVoice();
   const { isSpeaking, stopSpeaking, muted, toggleMute } = useAira();
 
-  const handleMicTap = () => {
+  // Press-and-hold instead of tap-to-toggle: recognition only resolves once
+  // the button is released, so a natural mid-sentence pause while the user
+  // is still composing their question no longer gets mistaken for "done
+  // talking" and answered on the first half of it (see startHold's comment
+  // in voice-command-context.tsx).
+  const handleHoldStart = (e: PointerEvent) => {
+    e.preventDefault();
+    // Without this, a touch that drifts slightly off the button's bounds
+    // mid-hold (very easy to do by accident — a finger is rarely perfectly
+    // still) fires pointerleave and ends the hold early, well before the
+    // user meant to release. Capturing the pointer keeps every subsequent
+    // event targeted at this button regardless of where the finger
+    // physically is, so only a genuine lift-off (pointerup) ends it.
+    (e.target as Element).setPointerCapture?.(e.pointerId);
     if (mode !== "talk") setMode("talk");
-    toggleListening();
+    startHold();
+  };
+  const handleHoldEnd = (e: PointerEvent) => {
+    e.preventDefault();
+    endHold();
   };
 
   return (
@@ -58,11 +78,14 @@ export function AiraCtaBar() {
         {supported && (
           <button
             type="button"
-            onClick={handleMicTap}
-            aria-label="Talk to Aira"
+            onPointerDown={handleHoldStart}
+            onPointerUp={handleHoldEnd}
+            onPointerLeave={handleHoldEnd}
+            onPointerCancel={handleHoldEnd}
+            aria-label={mode === "talk" && listening ? "Release to send" : "Hold to talk to Aira"}
             aria-pressed={mode === "talk" && listening}
             className={cn(
-              "relative flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-medium transition-colors",
+              "relative flex min-w-[112px] items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-2 text-[13px] font-medium leading-none transition-colors select-none touch-none",
               mode === "talk" && listening ? "bg-red-500 text-white" : "bg-forest-800 text-ivory-100"
             )}
           >
@@ -74,7 +97,7 @@ export function AiraCtaBar() {
               />
             )}
             <Mic className="h-4 w-4 shrink-0" />
-            {mode === "talk" && listening ? "Listening…" : "Talk to Aira"}
+            <span className="shrink-0">{mode === "talk" && listening ? "Listening…" : "Hold to talk"}</span>
           </button>
         )}
 

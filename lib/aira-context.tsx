@@ -183,7 +183,18 @@ export function AiraProvider({ children }: { children: React.ReactNode }) {
       audioElRef.current = audio;
       audio.src = `/api/aira/speech?text=${encodeURIComponent(text)}`;
       audio.play().catch(() => {
-        /* blocked by autoplay policy until a gesture — unlockAudio() retries it */
+        // Play can reject even for a muted element on some platforms (e.g.
+        // iOS Safari can still block it outright with no pending gesture to
+        // retry against). Previously this was swallowed silently, leaving
+        // isSpeaking stuck true forever since neither onended nor onerror
+        // ever fires for audio that never actually started — the avatar
+        // then looks like it's talking non-stop. Fall back to browser TTS
+        // (which manages its own isSpeaking lifecycle) instead of leaving
+        // the state hanging; unlockAudio() will still retry a *currently
+        // playing* element on the next gesture, but there's nothing left
+        // here for it to retry once we've moved on to the fallback voice.
+        cleanup();
+        if (requestId === speechRequestIdRef.current) speakViaBrowserTTS(text);
       });
     },
     [speakViaBrowserTTS]

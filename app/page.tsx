@@ -86,7 +86,7 @@ function JourneyScreen() {
             animate={isPopup ? { opacity: 1, y: 0 } : { opacity: 1, x: 0 }}
             exit={isPopup ? { opacity: 1, y: "100%" } : { opacity: 0, x: -24 }}
             transition={{ duration: 0.28, ease: "easeOut" }}
-            className={cn("no-scrollbar h-full w-full overflow-y-auto", showAiraControls && "pb-16")}
+            className={cn("no-scrollbar h-full w-full overflow-y-auto", showAiraControls && !callActive && "pb-16")}
           >
             <Screen />
           </motion.div>
@@ -112,8 +112,13 @@ function JourneyScreen() {
           avatar or switching to chat would bury the "Talk to Aira" CTA under
           the opaque overlay. Chat mode already has its own bottom controls
           (send box, "Switch to talk", minimize) built into <AiraChatDock />,
-          so the bar only needs to stay on top for the avatar takeover. */}
-      {showAiraControls && !chatFullScreen && (
+          so the bar only needs to stay on top for the avatar takeover.
+          Hidden during callActive (Screen02BuyerProfile's 3 profiling
+          questions) — that screen only ever answers by tapping one of its
+          own option chips, so the bar (and its "Didn't catch that" mic
+          error banner) would just be redundant, confusing clutter over a
+          screen that has no use for it. */}
+      {showAiraControls && !chatFullScreen && !callActive && (
         <div className="pointer-events-none absolute inset-0 z-50">
           <AiraCtaBar />
         </div>

@@ -14,10 +14,30 @@ export const DEFAULT_LEAD: LeadState = {
   stage: "introduction",
 };
 
-export function buildSalesSystemPrompt(lead: LeadState, project: ProjectKnowledgePackage | null, retrievedFacts: string[], context?: string | null): string {
+export function buildSalesSystemPrompt(
+  lead: LeadState,
+  project: ProjectKnowledgePackage | null,
+  retrievedFacts: string[],
+  context?: string | null,
+  otherProjects: { name: string; location: string; summary: string }[] = []
+): string {
   const projectBlock = project
     ? `ACTIVE PROJECT:\n${project.name}\nLocation: ${project.location}\nSummary: ${project.summary}\n\nRETRIEVED PROJECT FACTS FOR THIS TURN:\n${retrievedFacts.length ? retrievedFacts.map((fact) => `- ${fact}`).join("\n") : "No matching approved fact was retrieved."}\n\nPROJECT DATA THAT NEEDS CONFIRMATION:\n${project.needsConfirmation.map((fact) => `- ${fact}`).join("\n")}`
     : `ACTIVE PROJECT: None selected.\nDo not answer project-specific factual questions until a project is identified.`;
+
+  // Without this, "tell me about other projects" had nothing to answer
+  // from at all — the prompt only ever carried the single ACTIVE PROJECT,
+  // so the model (correctly, given what it was given) said it had no
+  // verified list of HoABL's other projects, even though the app's own UI
+  // was showing several of them right next to the chat. This is
+  // deliberately just name/location/one-line summary, not the full fact
+  // sections — those stay scoped to whichever project is active, so a
+  // detail question about a *different* project still doesn't get
+  // answered from unverified facts (the customer needs to switch the
+  // active project first, or the OTHER HOABL PROJECTS rule below asks them to).
+  const otherProjectsBlock = otherProjects.length
+    ? `\n\nOTHER HOABL PROJECTS (name, location and one-line summary only — you do NOT have detailed approved facts for these; do not invent pricing, configurations or amenities for them):\n${otherProjects.map((p) => `- ${p.name} — ${p.location}. ${p.summary}`).join("\n")}`
+    : "";
 
   return `You are Aira, a professional conversational sales executive for The House of Abhinandan Lodha (HoABL), operating as a reusable multi-project sales agent.
 
@@ -53,6 +73,7 @@ CONVERSATION RULES:
 - Future development: explain only what is present in retrieved/approved project material. Do not invent timelines, approvals, completion dates or investment outcomes.
 - Payment: when the customer is interested in buying, explain the project's approved payment-plan/EMI structure directly (milestone percentages, financing ceiling, etc.) whenever it's in the retrieved material. Only note that fully customer-specific eligibility/schedule needs final confirmation at KYC — don't withhold the general schedule behind an advisor.
 - Conversion: when buying intent is high and the customer has received the key information, naturally move toward the next concrete step yourself — comparing configurations, walking through the payment plan, or discussing the token/EOI amount and starting KYC. Only propose an advisor consultation if the customer explicitly wants a human. Never pressure or fabricate a token amount.
+- If the customer asks about HoABL's other projects (not the active one), use the OTHER HOABL PROJECTS list below to name them with their location and one-line summary — do not claim you have no information about other projects when that list is non-empty. You only have detailed approved facts (pricing, configurations, amenities, etc.) for the ACTIVE PROJECT, so for anything beyond name/location/summary on a different project, say that plainly and offer to switch the conversation to that project rather than guessing or inventing details.
 
 SALES JOURNEY:
 1. introduction: greet and identify the purpose.
@@ -79,7 +100,7 @@ Only trigger a video when its content is relevant and the asset is approved for 
 COMMON SALES PLAYBOOK:
 ${SALES_KNOWLEDGE}
 
-${projectBlock}
+${projectBlock}${otherProjectsBlock}
 
 OUTPUT:
 Return ONLY valid JSON with this exact shape:

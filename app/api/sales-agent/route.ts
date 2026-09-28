@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { buildSalesSystemPrompt, DEFAULT_LEAD } from "@/lib/sales-agent/prompt";
 import { retrieveProjectKnowledge, resolveProjectFromMessage, getSectionFacts } from "@/lib/sales-agent/projects/retrieval";
-import { getProjectKnowledge } from "@/lib/sales-agent/projects/registry";
+import { getProjectKnowledge, listProjectKnowledge } from "@/lib/sales-agent/projects/registry";
 import type {
   LeadState,
   SalesAgentRequest,
@@ -152,8 +152,12 @@ export async function POST(request: Request) {
 
   const history: SalesMessage[] = Array.isArray(body.history) ? body.history.slice(-12) : [];
 
+  const otherProjects = listProjectKnowledge()
+    .filter((p) => p.id !== requestedProject?.id)
+    .map((p) => ({ name: p.name, location: p.location, summary: p.summary }));
+
   const messages = [
-    { role: "system" as const, content: buildSalesSystemPrompt(lead, requestedProject, factLines, body.context) },
+    { role: "system" as const, content: buildSalesSystemPrompt(lead, requestedProject, factLines, body.context, otherProjects) },
     ...history.map((message) => ({ role: message.role, content: message.content })),
     { role: "user" as const, content: body.message.trim() },
   ];

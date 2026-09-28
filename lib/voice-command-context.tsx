@@ -27,6 +27,21 @@ interface VoiceContextValue {
   /** Why the mic last failed (permission denied, no speech detected, etc.) — surfaced in the UI instead of failing silently. */
   micError: string | null;
   toggleListening: () => void;
+  /**
+   * Push-to-talk: start listening for as long as the user holds the mic
+   * button, and only resolve what they said once they release it (see
+   * endHold). Unlike toggleListening's tap-to-start behaviour, this puts the
+   * recognizer in `continuous` mode for the duration of the hold — the
+   * browser's own SpeechRecognition otherwise finalizes (and fires onend)
+   * the moment it detects *any* pause in speech, which is what was cutting
+   * users off mid-question before they'd finished a sentence with a natural
+   * pause in it. Holding the button is what now marks "the question is
+   * over", not a brief silence.
+   */
+  startHold: () => void;
+  /** Ends a startHold() session — stops recognition and resolves the full,
+   * accumulated transcript from the whole hold (see onresult/onend below). */
+  endHold: () => void;
   /** Proactively triggers the browser's mic permission prompt (e.g. on the
    * welcome screen) so it's already granted by the time the user taps "Talk
    * to Aira" later, instead of interrupting them mid-flow. */
@@ -35,6 +50,19 @@ interface VoiceContextValue {
   submitText: (text: string) => void;
   /** Screens call this (via useVoiceCommands) to register what they can respond to while mounted. */
   registerCommands: (commands: VoiceCommand[]) => () => void;
+  /**
+   * Registers a fallback intent resolver for as long as the calling screen
+   * is mounted — called only once nothing in registerCommands' list matched
+   * *and* the debounce below has settled on the final fragment of the
+   * utterance (see handleTranscript's callActiveRef branch), so it always
+   * sees a complete utterance rather than a partial one Chrome is still
+   * refining. Resolves `true` if it handled the utterance (e.g. matched it
+   * to an option itself), `false` to fall back to the generic re-prompt.
+   * Used by Screen02BuyerProfile to ask the LLM which profiling option a
+   * free-form answer meant, instead of just re-prompting on every phrasing
+   * its own exact-label/synonym matchers didn't anticipate.
+   */
+  registerIntentFallback: (resolver: ((heard: string) => Promise<boolean>) | null) => void;
   /**
    * "talk" (Aira full-screen, voice-driven) is the default presentation;
    * "chat" is an opt-in secondary mode for typing instead — shared between
@@ -60,12 +88,10 @@ interface VoiceContextValue {
   setCallActive: (active: boolean) => void;
   /**
    * Screens with a multi-question voice flow (e.g. Screen02BuyerProfile)
-   * call this whenever the user answers by tapping instead of speaking —
-   * it stops the mic if it's open and stops it from auto-reopening after
-   * Aira's next line (see the auto-continue effect below), so a manual tap
-   * can't be second-guessed a moment later by the mic picking up unrelated
-   * background audio. Voice stays available any time the user taps "Talk to
-   * Aira" again — this only cancels the *automatic* reopening.
+   * call this whenever the user answers by tapping instead of speaking — it
+   * stops the mic if it's still open from a hold, so a manual tap can't be
+   * second-guessed a moment later by a stray recognition result. Voice
+   * stays available any time the user holds the mic button again.
    */
   pauseVoiceInput: () => void;
 }
@@ -122,6 +148,7 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
 
   const recognitionRef = useRef<any>(null);
   const commandsRef = useRef<VoiceCommand[]>([]);
+  const intentFallbackRef = useRef<((heard: string) => Promise<boolean>) | null>(null);
 
   // "Latest ref" pattern: handleTranscript below is a stable useCallback with
   // no dependencies (recreating it would tear down and rebuild the
@@ -129,7 +156,7 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
   // read the current speak()/sendUserMessage and journey context without
   // needing to be recreated whenever the buyer's profile, project or pocket
   // changes.
-  const { speak, isSpeaking } = useAira();
+  const { speak } = useAira();
   const { buyerName } = useJourney();
   const { sendUserMessage } = useConversation();
   const speakRef = useRef(speak);
@@ -142,15 +169,6 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
   // it mid-conversation.
   const buyerNameRef = useRef(buyerName);
   buyerNameRef.current = buyerName;
-  // Tracks whether the user has engaged voice at least once during the
-  // current "call" (see callActive) — e.g. Screen02BuyerProfile's 3
-  // profiling questions. Once true, the mic is reopened automatically after
-  // each of Aira's replies so a multi-question voice exchange feels like one
-  // continuous conversation instead of requiring a fresh tap on "Talk to
-  // Aira" before every single answer. A manual tap (see pauseVoiceInput)
-  // cancels this, so voice can't second-guess an answer picked by hand.
-  const conversationActiveRef = useRef(false);
-  const wasSpeakingRef = useRef(false);
   const resultReceivedRef = useRef(false);
   // Mirrors callActive state for handleTranscript below, which is a stable
   // useCallback with no deps (see its own comment) — a ref is how it reads
@@ -173,12 +191,30 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
   // Rescheduling on every fragment and only firing once fragments stop
   // arriving means exactly one call, using the longest (most complete) one.
   const pendingFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Push-to-talk state (see startHold/endHold). While true, onresult below
+  // accumulates transcript pieces instead of acting on them immediately —
+  // recognition is put in `continuous` mode for the hold, so it can (and
+  // often will) deliver several finalized phrases before the user releases
+  // the button, and only the full, concatenated utterance should be
+  // evaluated against the registered commands.
+  const holdModeRef = useRef(false);
+  const heldTranscriptsRef = useRef<string[]>([]);
+  // Defensive: set when startHold is called while recognition is somehow
+  // already listening in plain, non-hold mode (nothing currently starts a
+  // non-hold listen on its own, but toggleListening remains part of the
+  // public API) — the old session is aborted, and onend below restarts it
+  // fresh in hold mode rather than silently doing nothing.
+  const pendingHoldRestartRef = useRef(false);
   const clearPendingFallback = () => {
     if (pendingFallbackRef.current) {
       clearTimeout(pendingFallbackRef.current);
       pendingFallbackRef.current = null;
     }
   };
+
+  const registerIntentFallback = useCallback((resolver: ((heard: string) => Promise<boolean>) | null) => {
+    intentFallbackRef.current = resolver;
+  }, []);
 
   const registerCommands = useCallback((commands: VoiceCommand[]) => {
     commandsRef.current = commands;
@@ -249,7 +285,15 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
       // sales agent; the agent only takes over once the profile is built
       // and callActive goes false.
       if (callActiveRef.current) {
-        speakRef.current("Sorry, I didn't quite get that — could you say that again, or tap one of the options?");
+        if (intentFallbackRef.current) {
+          void intentFallbackRef.current(text).then((handled) => {
+            if (!handled) {
+              speakRef.current("Sorry, I didn't quite get that — could you say that again, or tap one of the options?");
+            }
+          });
+        } else {
+          speakRef.current("Sorry, I didn't quite get that — could you say that again, or tap one of the options?");
+        }
         return;
       }
 
@@ -287,10 +331,46 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
       resultReceivedRef.current = true;
       const text = e.results[e.results.length - 1][0].transcript;
       setMicError(null);
+      if (holdModeRef.current) {
+        // Don't act yet — just accumulate. The user is still holding the
+        // button, so this phrase isn't necessarily the whole question (see
+        // startHold's comment on why `continuous` mode is used for holds).
+        heldTranscriptsRef.current.push(text);
+        setHeard(heldTranscriptsRef.current.join(" "));
+        return;
+      }
       handleTranscript(text);
     };
     recognition.onend = () => {
       setListening(false);
+      if (pendingHoldRestartRef.current) {
+        pendingHoldRestartRef.current = false;
+        holdModeRef.current = true;
+        heldTranscriptsRef.current = [];
+        setHeard(null);
+        setMicError(null);
+        resultReceivedRef.current = false;
+        recognition.continuous = true;
+        try {
+          recognition.start();
+          setListening(true);
+        } catch {
+          /* ignore — nothing more we can do here */
+        }
+        return;
+      }
+      if (holdModeRef.current) {
+        holdModeRef.current = false;
+        recognition.continuous = false; // restore default for non-hold flows
+        const finalText = heldTranscriptsRef.current.join(" ").trim();
+        heldTranscriptsRef.current = [];
+        if (finalText) {
+          handleTranscript(finalText);
+        } else if (!resultReceivedRef.current) {
+          setMicError("Didn't catch that — try again.");
+        }
+        return;
+      }
       // Some browsers end the session with neither a result nor an "error"
       // event when they simply fail to pick anything up (mic cut out, or
       // the utterance was too short/quiet to finalize) — without this, that
@@ -329,13 +409,9 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
     const recognition = recognitionRef.current;
     if (!recognition) return;
     if (listening) {
-      // An explicit tap to stop mid-conversation means the user wants out —
-      // don't auto-reopen the mic after Aira's next line.
-      conversationActiveRef.current = false;
       recognition.stop();
       setListening(false);
     } else {
-      conversationActiveRef.current = true;
       // getUserMedia/SpeechRecognition are only available in a "secure
       // context" — https, or http on localhost. Opening the app over plain
       // http via a LAN IP (e.g. testing on a phone) silently fails with the
@@ -358,8 +434,71 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
     }
   }, [listening]);
 
+  const startHold = useCallback(() => {
+    const recognition = recognitionRef.current;
+    if (!recognition) return;
+    if (holdModeRef.current) {
+      // A previous hold's recognition session is still finalizing (endHold
+      // resets the `listening` UI optimistically before that completes —
+      // see its comment) — ignore this new press rather than clobbering
+      // that pending transcript/state out from under it.
+      return;
+    }
+    if (typeof window !== "undefined" && window.isSecureContext === false) {
+      setMicError("Voice needs a secure connection — open this over HTTPS (or localhost) to use the mic.");
+      return;
+    }
+    if (listening) {
+      // Already listening in non-hold mode (see pendingHoldRestartRef above)
+      // — abort it and let onend restart fresh in hold mode, instead of
+      // doing nothing.
+      pendingHoldRestartRef.current = true;
+      recognition.abort();
+      return;
+    }
+    holdModeRef.current = true;
+    heldTranscriptsRef.current = [];
+    setHeard(null);
+    setMicError(null);
+    resultReceivedRef.current = false;
+    // Continuous mode is the whole point of a hold: it stops the browser
+    // from finalizing recognition on its own the moment it hears a pause,
+    // which is exactly what was cutting the user off mid-question before
+    // (see the interface comment on startHold above). Restored to false in
+    // onend so it doesn't affect toggleListening's plain one-shot listens,
+    // which also reuse this same recognition instance.
+    recognition.continuous = true;
+    try {
+      recognition.start();
+      setListening(true);
+    } catch {
+      /* already started — ignore */
+    }
+  }, [listening]);
+
+  const endHold = useCallback(() => {
+    if (!holdModeRef.current) return;
+    // Reset the "Listening…" UI the instant the button is released, rather
+    // than waiting on the recognizer — .stop() asks it to wrap up and
+    // deliver a final result, but some browsers are slow (or, in
+    // `continuous` mode with no speech detected, occasionally just never)
+    // to actually fire `onend` afterwards. Without this, the button was
+    // getting stuck showing "Listening…" indefinitely after the user had
+    // already let go. onend (above) still does the real work — reading
+    // back heldTranscriptsRef and resolving the full utterance — whenever
+    // it does fire.
+    setListening(false);
+    const recognition = recognitionRef.current;
+    recognition?.stop();
+    // Safety net for the "onend never fires" case above: force it via the
+    // more forceful abort() shortly after, if the hold hasn't already been
+    // resolved by then.
+    setTimeout(() => {
+      if (holdModeRef.current) recognition?.abort();
+    }, 800);
+  }, []);
+
   const pauseVoiceInput = useCallback(() => {
-    conversationActiveRef.current = false;
     const recognition = recognitionRef.current;
     if (recognition && listening) {
       recognition.stop();
@@ -367,34 +506,15 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
     }
   }, [listening]);
 
-  // Once the user has answered by voice at least once during a "call" (see
-  // callActive — e.g. Screen02BuyerProfile's 3 profiling questions), reopen
-  // the mic automatically as soon as Aira finishes speaking her next line,
-  // instead of leaving it to the user to tap "Talk to Aira" again for every
-  // question. SpeechRecognition itself is one-shot (continuous = false, so
-  // it always stops right after a result), so this is what makes multi-turn
-  // voice answers feel continuous rather than requiring a fresh tap each time.
-  useEffect(() => {
-    const justStoppedSpeaking = wasSpeakingRef.current && !isSpeaking;
-    wasSpeakingRef.current = isSpeaking;
-    if (!justStoppedSpeaking) return;
-    if (!conversationActiveRef.current || !callActive || mode !== "talk" || listening) return;
-    const recognition = recognitionRef.current;
-    if (!recognition) return;
-    resultReceivedRef.current = false;
-    try {
-      recognition.start();
-      setListening(true);
-    } catch {
-      /* already started, or recognition unavailable right now — ignore */
-    }
-  }, [isSpeaking, callActive, mode, listening]);
-
-  // Leaving the call (or switching to chat) ends the voice exchange — don't
-  // let a stale flag reopen the mic on some later, unrelated screen.
-  useEffect(() => {
-    if (!callActive || mode !== "talk") conversationActiveRef.current = false;
-  }, [callActive, mode]);
+  // Previously the mic reopened automatically as soon as Aira finished
+  // speaking her next line, so a multi-question voice flow (e.g.
+  // Screen02BuyerProfile) felt continuous without a fresh tap each time.
+  // Now that "Talk to Aira" is press-and-hold rather than tap-to-toggle,
+  // that auto-reopen fights the new interaction model outright — it was
+  // silently starting a plain, non-hold listen right after every answer,
+  // which the hold button couldn't take over (see startHold's `listening`
+  // guard) and which the user never asked to start. Voice input is now
+  // always explicit: only startHold/endHold open the mic.
 
   const submitText = useCallback(
     (text: string) => {
@@ -431,9 +551,12 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
         heard,
         micError,
         toggleListening,
+        startHold,
+        endHold,
         requestMicPermission,
         submitText,
         registerCommands,
+        registerIntentFallback,
         mode,
         setMode,
         avatarExpanded,
@@ -495,4 +618,26 @@ export function useVoiceCommands(commands: VoiceCommand[]) {
     }];
     return ctx.registerCommands(proxy);
   }, [ctx?.registerCommands]);
+}
+
+/**
+ * Registers the given resolver as the calling screen's fallback for once
+ * none of its useVoiceCommands entries matched — see registerIntentFallback
+ * above for when it runs and what its return value means. Same latest-ref
+ * pattern as useVoiceCommands, for the same reason (the resolver closure
+ * captures per-render state like "which question is this").
+ */
+export function useIntentFallback(resolver: ((heard: string) => Promise<boolean>) | null) {
+  const ctx = useContext(VoiceContext);
+  const latestResolver = useRef(resolver);
+  latestResolver.current = resolver;
+
+  useLayoutEffect(() => {
+    if (!ctx) return;
+    ctx.registerIntentFallback((heard) => {
+      const current = latestResolver.current;
+      return current ? current(heard) : Promise.resolve(false);
+    });
+    return () => ctx.registerIntentFallback(null);
+  }, [ctx?.registerIntentFallback]);
 }
