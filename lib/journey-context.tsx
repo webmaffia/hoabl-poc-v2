@@ -24,11 +24,12 @@ export const SCREEN_ORDER = [
   // this absorbed the separate "browse all projects" list screen, which
   // duplicated the same picker for no real benefit.
   "project-match",
-  // Verify the buyer's mobile (OTP) right after they commit to a project,
-  // before showing project details — so the walkthrough onward is tied to a
+  "project-walkthrough",
+  // Verify the buyer's mobile (OTP) after they've walked through the
+  // project — so browsing/understanding it doesn't require identity up
+  // front, but everything from pocket selection onward is tied to a
   // verified number instead of an anonymous visitor.
   "identity-capture",
-  "project-walkthrough",
   "pocket-map",
   "pocket-detail",
   "payment-plan",

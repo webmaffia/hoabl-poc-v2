@@ -24,7 +24,7 @@ export const PROJECT_KNOWLEDGE: Record<string, ProjectKnowledgePackage> = {
       "Hospitality by Miros",
       "Konkan's largest clubhouse inaugurated 21 March 2026",
       "Possession by end of 2026",
-      "MahaRERA registered, as stated in the supplied sales material"
+      "MahaRERA registered"
     ],
     // Sourced from client-supplied documents dated 16.09.2026: the Isle of
     // Anjarle Opportunity Doc, Closing Deck, Travel Guide, an independent
@@ -120,7 +120,7 @@ export const PROJECT_KNOWLEDGE: Record<string, ProjectKnowledgePackage> = {
         "The House of Abhinandan Lodha (HoABL) was established in 2020 and is NOT affiliated, in any manner, with Lodha or Lodha Group — use this exact disclaimer if a customer asks about the Lodha name.",
         "Scale (developer-wide, not project-specific): 6,500+ customers across 27 countries; 13+ million sq.ft. of land sold; 34+ million sq.ft. under development.",
         "Location count is cited inconsistently across sources — the Closing Deck states 23+ states / 107+ cities / 8+ locations, while a calling script states '16 locations'. Confirm the current figure rather than picking one.",
-        "Other HoABL branded land developments: Bicholim, Goa (130+ acre, the only such development with a man-made sea and beach); Ayodhya, UP (50+ acre, near Ram Temple, with a Leela Palace hotel on-premise); Khopoli, Maharashtra (50-acre, 30,000 sq.ft. hilltop boutique resort); Alibaug, Maharashtra (chosen by public figures including Mr. Amitabh Bachchan and Ms. Kriti Sanon, per company materials — present this only as a stated claim, never as an implied endorsement or guarantee of similar outcome)."
+        "Other HoABL branded land developments: Bicholim, Goa (130+ acre, the only such development with a man-made sea and beach); Ayodhya, UP (50+ acre, near Ram Temple, with a Leela Palace hotel on-premise); Khopoli, Maharashtra (50-acre, 30,000 sq.ft. hilltop boutique resort); Alibaug, Maharashtra (chosen by public figures including Mr. Amitabh Bachchan and Ms. Kriti Sanon — present this only as a stated claim, never as an implied endorsement or guarantee of similar outcome)."
       ],
       legal: [
         "The project is being developed in phases, each separately MahaRERA-registered: TomorrowView (P52800050210); Tomorrowworld – Tomorrowland Phase IV (P52800047713); The Ridley (P52800076609); The Ridley Phase-2 (PP1281012400069); Codename Tomorrowland Ph-1 (P52800031035), Ph-2 (P52800031036), Ph-3 (P52800033162).",

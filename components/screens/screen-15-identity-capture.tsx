@@ -12,8 +12,9 @@ import { track } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
 // A quick mobile-number verification gate — just name + mobile, not the full
-// KYC form — right after the buyer commits to a project, before the
-// walkthrough onward ties everything to a verified number instead of an
+// KYC form — right after the buyer has walked through the project, so
+// browsing/understanding it doesn't require identity up front, but pocket
+// selection onward ties everything to a verified number instead of an
 // anonymous visitor. One screen throughout: the code-box input appears
 // inline once a code is sent, rather than navigating to a separate step.
 
@@ -33,7 +34,7 @@ export function Screen15IdentityCapture() {
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
-    speak(`Before we dive into ${selectedProject.name} — what's your name and mobile number, so I can verify it's you?`);
+    speak(`Before we pick out a pocket in ${selectedProject.name} — what's your name and mobile number, so I can verify it's you?`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
